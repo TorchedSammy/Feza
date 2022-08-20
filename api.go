@@ -307,7 +307,7 @@ func regexMatch(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	}
 
 	luaIndexes := rt.NewTable()
-	if len(indexes) == 0 {
+	if len(indexes) == 0 && len(c.Etc()) == 0 {
 		indexes = re.FindAllStringIndex(subject, -1)
 	}
 
