@@ -22,6 +22,7 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		"get_file_info": {systemGetFileInfo, 1, false},
 		"show_fatal_error": {systemShowFatalError, 2, false},
 		"chdir": {systemChdir, 1, false},
+		"list_dir": {systemListDir, 1, false},
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
@@ -116,4 +117,25 @@ func systemChdir(t *rt.Thread, c *rt.GoCont) (rt.Cont, error){
 	}
 
 	return c.Next(), nil
+}
+
+func systemListDir(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	if err := c.Check1Arg(); err != nil {
+		return nil, err
+	}
+	dir, err := c.StringArg(0)
+	if err != nil {
+		return nil, err
+	}
+	names := rt.NewTable()
+
+	dirEntries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	for i, entry := range dirEntries {
+		names.Set(rt.IntValue(int64(i + 1)), rt.StringValue(entry.Name()))
+	}
+
+	return c.PushingNext1(t.Runtime, rt.TableValue(names)), nil
 }
