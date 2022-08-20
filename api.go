@@ -252,7 +252,8 @@ func regexCompile(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 		return nil, err
 	}
 
-	return c.PushingNext1(t.Runtime, t.NewUserDataValue(re, regexMetaKey.AsTable())), nil
+	regexMeta := t.Registry(regexMetaKey)
+	return c.PushingNext1(t.Runtime, t.NewUserDataValue(re, regexMeta.AsTable())), nil
 }
 
 func regexMatch(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
