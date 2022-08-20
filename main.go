@@ -22,8 +22,11 @@ func main() {
 		return
 	}
 	defer wnd.Destroy()
+
+	wnd.StartFrame()
 	cv.SetFillStyle("#000")
 	cv.FillRect(0, 0, float64(w), float64(h))
+	wnd.FinishFrame()
 
 	go initLua()
 	<-quit
