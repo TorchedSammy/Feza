@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path/filepath"
+
 	rt "github.com/arnodel/golua/runtime"
 	"github.com/arnodel/golua/lib/packagelib"
 	"github.com/veandco/go-sdl2/sdl"
@@ -14,6 +16,7 @@ var systemLoader = packagelib.Loader{
 func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 	exports := map[string]luaExport{
 		//"poll_event": {systemPollEvent, 0, false},
+		"absolute_path": {systemAbsolutePath, 1, false},
 		"get_time": {systemGetTime, 0, false},
 	}
 	mod := rt.NewTable()
@@ -37,4 +40,18 @@ func systemGetTime(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	time := sdl.GetPerformanceCounter() / sdl.GetPerformanceFrequency()
 
 	return c.PushingNext1(t.Runtime, rt.IntValue(int64(time))), nil
+}
+
+func systemAbsolutePath(t *rt.Thread, c *rt.GoCont) (rt.Cont, error){
+	path, err := c.StringArg(0)
+	if err != nil {
+		return nil, err
+	}
+
+	abspath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.PushingNext1(t.Runtime, rt.StringValue(abspath)), nil
 }
