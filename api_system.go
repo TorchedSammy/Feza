@@ -13,7 +13,8 @@ var systemLoader = packagelib.Loader{
 
 func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 	exports := map[string]luaExport{
-		"poll_event": {systemPollEvent, 0, false},
+		//"poll_event": {systemPollEvent, 0, false},
+		"get_time": {systemGetTime, 0, false},
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
@@ -28,4 +29,12 @@ func systemPollEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 		//case 
 	}
 	return c.Next(), nil
+}
+
+func systemGetTime(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	// "Get amount of iterations since the application was launched, also known as SDL_GetPerformanceCounter() / SDL_GetPerformanceFrequency()"
+	// what is this going to be when we use just gl ...
+	time := sdl.GetPerformanceCounter() / sdl.GetPerformanceFrequency()
+
+	return c.PushingNext1(t.Runtime, rt.IntValue(int64(time))), nil
 }
