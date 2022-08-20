@@ -20,10 +20,22 @@ func initLua() {
 	})
 	lib.LoadAll(r)
 
+	// Core native libraries
 	lib.LoadLibs(r, rendererLoader)
 	lib.LoadLibs(r, systemLoader)
 	lib.LoadLibs(r, processLoader)
 	lib.LoadLibs(r, regexLoader)
+
+	env := r.GlobalEnv()
+	renderer, _ := rendererLoader.Load(r)
+	system, _ := systemLoader.Load(r)
+	process, _ := processLoader.Load(r)
+	regex, _ := regexLoader.Load(r)
+
+	r.SetEnv(env, "renderer", renderer)
+	r.SetEnv(env, "system", system)
+	r.SetEnv(env, "process", process)
+	r.SetEnv(env, "regex", regex)
 
 	// Globals
 	var platform string
