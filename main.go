@@ -11,7 +11,6 @@ import (
 var r *rt.Runtime
 var wnd *sdlcanvas.Window
 var cv *canvas.Canvas
-var quit = make(chan bool)
 
 func main() {
 	var err error
@@ -28,7 +27,6 @@ func main() {
 	cv.FillRect(0, 0, float64(w), float64(h))
 	wnd.FinishFrame()
 
-	go initLua()
-	<-quit
+	initLua()
 }
 
