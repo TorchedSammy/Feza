@@ -184,7 +184,6 @@ func regexLoad(rtm *rt.Runtime) (rt.Value, func()) {
 
 	regexMeta := rt.NewTable()
 	r.SetEnv(regexMeta, "__index", rt.TableValue(regexMethods))
-	//r.SetEnvGoFunc(regexMeta, "__tostring", regexToString, 1, false)
 	r.SetRegistry(regexMetaKey, rt.TableValue(regexMeta))
 
 	exports := map[string]luaExport{
@@ -192,6 +191,9 @@ func regexLoad(rtm *rt.Runtime) (rt.Value, func()) {
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
+
+	r.SetEnv(mod, "ANCHORED", rt.IntValue(REGEX_ANCHORED))
+	r.SetEnv(mod, "ENDANCHORED", rt.IntValue(REGEX_ENDANCHORED))
 
 	return rt.TableValue(mod), nil
 }
