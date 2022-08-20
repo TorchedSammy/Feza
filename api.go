@@ -56,4 +56,5 @@ func setupAPI() {
 	r.SetEnv(env, "SCALE", rt.IntValue(1)) // TODO: get dpi
 	r.SetEnv(env, "EXEFILE", rt.StringValue(exe))
 	r.SetEnv(env, "HOME", rt.StringValue(homedir))
+	r.SetEnv(env, "DATADIR", rt.StringValue("/usr/local/share/lite-xl"))
 }
