@@ -20,9 +20,9 @@ end, function(err)
 		local fp = io.open('error.txt', 'wb')
 		fp:write('Error: ' .. tostring(err) .. '\n')
 		fp:write(debug.traceback(nil, 4)..'\n')
+		fp:close()
 	end
 
-	fp:close()
 	system.show_fatal_error('Lite XL internal error',
 		'An internal error occurred in a critical part of the application.\n\n'..
 		'Please verify the file "error.txt" in the directory '..error_dir)
