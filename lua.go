@@ -12,6 +12,7 @@ import (
 )
 
 func initLua() {
+	init:
 	r = rt.New(os.Stdout)
 	r.PushContext(rt.RuntimeContextDef{
 		MessageHandler: debuglib.Traceback,
@@ -20,28 +21,33 @@ func initLua() {
 
 	setupAPI()
 
-	err := doFile(r, "init.lua")
+	fn, err := doFile(r, "init.lua")
 	fmt.Println(err)
+	if b, _ := fn.TryBool(); b {
+		// restart
+		goto init
+	}
 }
 
-func doFile(rtm *rt.Runtime, path string) error {
+func doFile(rtm *rt.Runtime, path string) (rt.Value, error) {
 	f, err := os.Open(path)
 	defer f.Close()
 
+	v := rt.NilValue
 	if err != nil {
-		return err
+		return v, err
 	}
 	
 	reader := bufio.NewReader(f)
 	c, err := reader.ReadByte()
 	if err != nil && err != io.EOF {
-		return err
+		return v, err
 	}
 
 	// unread so a char won't be missing
 	err = reader.UnreadByte()
 	if err != nil {
-		return err
+		return v, err
 	}
 
 	var buf []byte
@@ -49,7 +55,7 @@ func doFile(rtm *rt.Runtime, path string) error {
 		// shebang - skip that line
 		_, err := reader.ReadBytes('\n')
 		if err != nil && err != io.EOF {
-			return err
+			return v, err
 		}
 		buf = []byte{'\n'}
 	}
@@ -60,7 +66,7 @@ func doFile(rtm *rt.Runtime, path string) error {
 			if err == io.EOF {
 				break
 			}
-			return err
+			return v, err
 		}
 		
 		buf = append(buf, line...)
@@ -68,8 +74,8 @@ func doFile(rtm *rt.Runtime, path string) error {
 
 	clos, err := rtm.LoadFromSourceOrCode(path, buf, "bt", rt.TableValue(rtm.GlobalEnv()), false)
 	if clos != nil {
-		_, err = rt.Call1(rtm.MainThread(), rt.FunctionValue(clos))
+		v, err = rt.Call1(rtm.MainThread(), rt.FunctionValue(clos))
 	}
 
-	return err
+	return v, err
 }
