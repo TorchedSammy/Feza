@@ -1,3 +1,8 @@
+local oldOsDate = os.date
+function os.date(format, time)
+	return oldOsDate(format and format or '%a %b %d %X %Y', time and time or os.time())
+end
+
 local core
 xpcall(function()
 	local exedir = EXEFILE:match('^(.*)/[^/]+$')
