@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 
 	rt "github.com/arnodel/golua/runtime"
@@ -18,6 +19,7 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		//"poll_event": {systemPollEvent, 0, false},
 		"absolute_path": {systemAbsolutePath, 1, false},
 		"get_time": {systemGetTime, 0, false},
+		"get_file_info": {systemGetFileInfo, 1, false},
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
@@ -54,4 +56,26 @@ func systemAbsolutePath(t *rt.Thread, c *rt.GoCont) (rt.Cont, error){
 	}
 
 	return c.PushingNext1(t.Runtime, rt.StringValue(abspath)), nil
+}
+
+func systemGetFileInfo(t *rt.Thread, c *rt.GoCont) (rt.Cont, error){
+	path, err := c.StringArg(0)
+	if err != nil {
+		return nil, err
+	}
+
+	pathinfo, err := os.Stat(path)
+	if err != nil {
+		return c.PushingNext1(t.Runtime, rt.StringValue(err.Error())), nil
+	}
+	statTbl := rt.NewTable()
+	if pathinfo.IsDir() {
+		r.SetEnv(statTbl, "type", rt.StringValue("dir"))
+	} else {
+		r.SetEnv(statTbl, "type", rt.StringValue("file"))
+	}
+	r.SetEnv(statTbl, "modified", rt.IntValue(int64(pathinfo.ModTime().Second())))
+	r.SetEnv(statTbl, "modified", rt.IntValue(int64(pathinfo.Size())))
+
+	return c.PushingNext1(t.Runtime, rt.TableValue(statTbl)), nil
 }
