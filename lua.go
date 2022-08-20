@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/user"
-	"runtime"
 
 	"github.com/arnodel/golua/lib"
 	"github.com/arnodel/golua/lib/debuglib"
@@ -20,40 +18,7 @@ func initLua() {
 	})
 	lib.LoadAll(r)
 
-	// Core native libraries
-	lib.LoadLibs(r, rendererLoader)
-	lib.LoadLibs(r, systemLoader)
-	lib.LoadLibs(r, processLoader)
-	lib.LoadLibs(r, regexLoader)
-
-	env := r.GlobalEnv()
-	renderer, _ := rendererLoader.Load(r)
-	system, _ := systemLoader.Load(r)
-	process, _ := processLoader.Load(r)
-	regex, _ := regexLoader.Load(r)
-
-	r.SetEnv(env, "renderer", renderer)
-	r.SetEnv(env, "system", system)
-	r.SetEnv(env, "process", process)
-	r.SetEnv(env, "regex", regex)
-
-	// Globals
-	var platform string
-	switch runtime.GOOS {
-		case "windows": platform = "Windows"
-		case "darwin": platform = "Mac OS X"
-		case "linux": platform = "Linux"
-		// TODO: ios and android (will lavatera even build on those platforms..?)
-	}
-	exe, _ := os.Executable()
-	curuser, _ := user.Current()
-	homedir := curuser.HomeDir
-
-	r.SetEnv(env, "ARGS", rt.TableValue(rt.NewTable())) // TODO: convert os.Args to lua
-	r.SetEnv(env, "PLATFORM", rt.StringValue(platform))
-	r.SetEnv(env, "SCALE", rt.IntValue(1)) // TODO: get dpi
-	r.SetEnv(env, "EXEFILE", rt.StringValue(exe))
-	r.SetEnv(env, "HOME", rt.StringValue(homedir))
+	setupAPI()
 
 	err := doFile(r, "init.lua")
 	fmt.Println(err)
