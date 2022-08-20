@@ -262,7 +262,7 @@ func regexMatch(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 		return nil, err
 	}
 
-	subject, err := c.StringArg(0)
+	subject, err := c.StringArg(1)
 	if err != nil {
 		return nil, err
 	}
