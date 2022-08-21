@@ -54,7 +54,12 @@ func setupAPI() {
 	curuser, _ := user.Current()
 	homedir := curuser.HomeDir
 
-	r.SetEnv(env, "ARGS", rt.TableValue(rt.NewTable())) // TODO: convert os.Args to lua
+	luaArgs := rt.NewTable()
+	for i, arg := range os.Args {
+		luaArgs.Set(rt.IntValue(int64(i + 1)), rt.StringValue(arg))
+	}
+
+	r.SetEnv(env, "ARGS", rt.TableValue(luaArgs))
 	r.SetEnv(env, "PLATFORM", rt.StringValue(platform))
 	r.SetEnv(env, "SCALE", rt.IntValue(1)) // TODO: get dpi
 	r.SetEnv(env, "EXEFILE", rt.StringValue(exe))
