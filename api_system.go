@@ -78,7 +78,7 @@ func systemGetFileInfo(t *rt.Thread, c *rt.GoCont) (rt.Cont, error){
 		r.SetEnv(statTbl, "type", rt.StringValue("file"))
 	}
 	r.SetEnv(statTbl, "modified", rt.IntValue(int64(pathinfo.ModTime().Second())))
-	r.SetEnv(statTbl, "modified", rt.IntValue(int64(pathinfo.Size())))
+	r.SetEnv(statTbl, "size", rt.IntValue(int64(pathinfo.Size())))
 
 	return c.PushingNext1(t.Runtime, rt.TableValue(statTbl)), nil
 }
