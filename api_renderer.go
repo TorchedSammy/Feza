@@ -19,6 +19,7 @@ func rendererLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		"end_frame": {rendererEndFrame, 0, false},
 		"draw_rect": {rendererDrawRect, 5, false},
 		"draw_text": {rendererDrawText, 5, false},
+		"set_clip_rect": {rendererClipRect, 4, false},
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
@@ -71,6 +72,34 @@ func rendererDrawRect(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 
 	cv.SetFillStyle(r, g, b, a)
 	cv.FillRect(x, y, w, h)
+
+	return c.Next(), nil
+}
+
+func rendererClipRect(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	if err := c.CheckNArgs(4); err != nil {
+		return nil, err
+	}
+
+	x, err := c.FloatArg(0)
+	if err != nil {
+		return nil, err
+	}
+	y, err := c.FloatArg(1)
+	if err != nil {
+		return nil, err
+	}
+	w, err := c.FloatArg(2)
+	if err != nil {
+		return nil, err
+	}
+	h, err := c.FloatArg(3)
+	if err != nil {
+		return nil, err
+	}
+
+	cv.Rect(x, y, w, h)
+	cv.Clip()
 
 	return c.Next(), nil
 }
