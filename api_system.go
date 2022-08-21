@@ -28,6 +28,7 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		"get_fs_type": {systemFsType, 1, false},
 		"set_window_bordered": {systemSetBordered, 1, false},
 		"set_window_hit_test": {systemWindowHitTest, 1, false},
+		"set_window_title": {systemSetTitle, 1, false},
 		"sleep": {systemSleep, 1, false},
 	}
 	mod := rt.NewTable()
@@ -230,5 +231,15 @@ func systemSleep(r *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	}
 
 	time.Sleep(time.Duration(secs) * time.Second)
+	return c.Next(), nil
+}
+
+func systemSetTitle(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	title, err := c.StringArg(0)
+	if err != nil {
+		return nil, err
+	}
+
+	wnd.Window.SetTitle(title)
 	return c.Next(), nil
 }
