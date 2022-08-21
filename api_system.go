@@ -133,7 +133,7 @@ func systemListDir(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 
 	dirEntries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return c.PushingNext(t.Runtime, rt.NilValue, rt.StringValue(err.Error())), nil
 	}
 	for i, entry := range dirEntries {
 		names.Set(rt.IntValue(int64(i + 1)), rt.StringValue(entry.Name()))
