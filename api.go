@@ -27,17 +27,20 @@ func setupAPI() {
 	lib.LoadLibs(r, systemLoader)
 	lib.LoadLibs(r, processLoader)
 	lib.LoadLibs(r, regexLoader)
+	lib.LoadLibs(r, dirmonitorLoader)
 
 	env := r.GlobalEnv()
 	renderer, _ := rendererLoader.Load(r)
 	system, _ := systemLoader.Load(r)
 	process, _ := processLoader.Load(r)
 	regex, _ := regexLoader.Load(r)
+	dirmon, _ := dirmonitorLoader.Load(r) // type is called dirmonitor. doesnt matter in code, but /shrug
 
 	r.SetEnv(env, "renderer", renderer)
 	r.SetEnv(env, "system", system)
 	r.SetEnv(env, "process", process)
 	r.SetEnv(env, "regex", regex)
+	r.SetEnv(env, "dirmonitor", dirmon)
 
 	// Globals
 	var platform string
