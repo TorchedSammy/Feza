@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -37,19 +38,44 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 	return rt.TableValue(mod), nil
 }
 
+func itv(num int64) rt.Value {
+	return rt.IntValue(num)
+}
+
+func stv(str string) rt.Value {
+	return rt.StringValue(str)
+}
+
 func systemPollEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	n := c.Next()
+poll:
 	event := sdl.PollEvent()
 
-	var eventName string
-	var eventArgs []interface{}
 	switch e := event.(type) {
 		case *sdl.QuitEvent:
-			eventName = "quit"
-		case *sdl.MouseButtonEvent:
-			eventName = "mousereleased"
-			if e.Type == sdl.MOUSEBUTTONDOWN {
-				eventName = "mousepressed"
+			n.Push(t.Runtime, stv("quit"))
+		// Window Events
+		case *sdl.WindowEvent:
+			switch e.Event {
+				case sdl.WINDOWEVENT_EXPOSED: n.Push(t.Runtime, stv("exposed"))
+				case sdl.WINDOWEVENT_RESTORED: n.Push(t.Runtime, stv("restored"))
+				case sdl.WINDOWEVENT_RESIZED:
+					w := e.Data1
+					h := e.Data2
+					n.Push(t.Runtime, stv("resized"))
+					n.Push(t.Runtime, itv(int64(w)))
+					n.Push(t.Runtime, itv(int64(h)))
+				default:
+					goto poll
 			}
+		// Mouse Events
+		case *sdl.MouseButtonEvent:
+			typ := "mousereleased"
+			if e.Type == sdl.MOUSEBUTTONDOWN {
+				typ = "mousepressed"
+			}
+			n.Push(t.Runtime, stv(typ))
+	
 			var buttonName string
 			switch e.Button {
 				case sdl.BUTTON_LEFT: buttonName = "left"
@@ -58,25 +84,43 @@ func systemPollEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 				case sdl.BUTTON_X1: buttonName = "x"
 				case sdl.BUTTON_X2: buttonName = "y"
 			}
-			eventArgs = []interface{}{buttonName, int(e.X), int(e.Y), int(e.Clicks)}
+			n.Push(t.Runtime, stv(buttonName))
+			n.Push(t.Runtime, itv(int64(e.X)))
+			n.Push(t.Runtime, itv(int64(e.Y)))
+			n.Push(t.Runtime, itv(int64(e.Clicks)))
 		case *sdl.MouseMotionEvent:
-			eventName = "mousemoved"
-			eventArgs = []interface{}{int(e.X), int(e.Y), int(e.XRel), int(e.YRel)}
+			n.Push(t.Runtime, stv("mousemoved"))
+			n.Push(t.Runtime, itv(int64(e.X)))
+			n.Push(t.Runtime, itv(int64(e.Y)))
+			n.Push(t.Runtime, itv(int64(e.XRel)))
+			n.Push(t.Runtime, itv(int64(e.YRel)))
 		case *sdl.MouseWheelEvent:
-			eventName = "mousewheel"
-			eventArgs = []interface{}{int(e.Y)}
+			n.Push(t.Runtime, stv("mousewheel"))
+			n.Push(t.Runtime, itv(int64(e.Y)))
+		default:
+			goto poll
 	}
 
-	luaEventArgs := rt.NewTable()
-	for i, arg := range eventArgs {
-		if num, ok := arg.(int); ok {
-			luaEventArgs.Set(rt.IntValue(int64(i + 1)), rt.IntValue(int64(num)))
-			continue
+	return n, nil
+}
+
+func systemWaitEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	wait := func(t int) sdl.Event {
+		return sdl.WaitEvent()
+	}
+
+	var timeout float64
+	if err := c.Check1Arg(); err == nil {
+		fmt.Println("not indefinite wait")
+		wait = sdl.WaitEventTimeout
+		timeout, err = c.FloatArg(0)
+		if err != nil {
+			return nil, err
 		}
-		luaEventArgs.Set(rt.IntValue(int64(i + 1)), rt.AsValue(arg))
 	}
 
-	return c.PushingNext(t.Runtime, rt.StringValue(eventName), rt.TableValue(luaEventArgs)), nil
+	ev := wait(int(time.Duration(timeout) * time.Second))
+	return c.PushingNext1(t.Runtime, rt.BoolValue(ev != nil)), nil
 }
 
 func systemGetTime(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
