@@ -20,6 +20,7 @@ func rendererLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		"draw_rect": {rendererDrawRect, 5, false},
 		"draw_text": {rendererDrawText, 5, false},
 		"set_clip_rect": {rendererClipRect, 4, false},
+		"get_size": {rendererGetSize, 0, false},
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
@@ -104,6 +105,11 @@ func rendererClipRect(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	return c.Next(), nil
 }
 
+func rendererGetSize(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	w, h := wnd.Window.GetSize()
+
+	return c.PushingNext(t.Runtime, rt.IntValue(int64(w)), rt.IntValue(int64(h))), nil
+}
 func rendererDrawText(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	if err := c.CheckNArgs(5); err != nil {
 		return nil, err
