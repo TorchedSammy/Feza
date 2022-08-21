@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	rt "github.com/arnodel/golua/runtime"
 	"github.com/arnodel/golua/lib/packagelib"
@@ -25,6 +26,9 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		"list_dir": {systemListDir, 1, false},
 		"mkdir": {systemMkdir, 1, false},
 		"get_fs_type": {systemFsType, 1, false},
+		"set_window_bordered": {systemSetBordered, 1, false},
+		"set_window_hit_test": {systemWindowHitTest, 1, false},
+		"sleep": {systemSleep, 1, false},
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
@@ -201,4 +205,30 @@ func systemFsType(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	fsType := "ext4" // TODO: get actual fs type
 
 	return c.PushingNext1(t.Runtime, rt.StringValue(fsType)), nil
+}
+
+func systemWindowHitTest(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	// TODO
+	return c.Next(), nil
+}
+
+func systemSetBordered(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	_, err := c.BoolArg(0)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: set (non) bordered
+
+	return c.Next(), nil
+}
+
+func systemSleep(r *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	secs, err := c.IntArg(0)
+	if err != nil {
+		return nil, err
+	}
+
+	time.Sleep(time.Duration(secs) * time.Second)
+	return c.Next(), nil
 }
