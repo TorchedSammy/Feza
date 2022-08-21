@@ -23,6 +23,8 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		"show_fatal_error": {systemShowFatalError, 2, false},
 		"chdir": {systemChdir, 1, false},
 		"list_dir": {systemListDir, 1, false},
+		"mkdir": {systemMkdir, 1, false},
+		"get_fs_type": {systemFsType, 1, false},
 	}
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
@@ -138,4 +140,32 @@ func systemListDir(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	}
 
 	return c.PushingNext1(t.Runtime, rt.TableValue(names)), nil
+}
+
+func systemMkdir(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	if err := c.CheckNArgs(1); err != nil {
+		return nil, err
+	}
+	path, err := c.StringArg(0)
+	if err != nil {
+		return nil, err
+	}
+
+	err = os.Mkdir(path, 0744)
+	if err != nil {
+		return c.PushingNext1(t.Runtime, rt.BoolValue(false)), err
+	}
+
+	return c.PushingNext1(t.Runtime, rt.BoolValue(true)), err
+}
+
+func systemFsType(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	_, err := c.StringArg(0)
+	if err != nil {
+		return nil, err
+	}
+
+	fsType := "ext4" // TODO: get actual fs type
+
+	return c.PushingNext1(t.Runtime, rt.StringValue(fsType)), nil
 }
