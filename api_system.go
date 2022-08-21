@@ -16,7 +16,7 @@ var systemLoader = packagelib.Loader{
 
 func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 	exports := map[string]luaExport{
-		//"poll_event": {systemPollEvent, 0, false},
+		"poll_event": {systemPollEvent, 0, false},
 		"absolute_path": {systemAbsolutePath, 1, false},
 		"get_time": {systemGetTime, 0, false},
 		"get_file_info": {systemGetFileInfo, 1, false},
@@ -35,10 +35,43 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 func systemPollEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	event := sdl.PollEvent()
 
-	switch event.(type) {
-		//case 
+	var eventName string
+	var eventArgs []interface{}
+	switch e := event.(type) {
+		case *sdl.QuitEvent:
+			eventName = "quit"
+		case *sdl.MouseButtonEvent:
+			eventName = "mousereleased"
+			if e.Type == sdl.MOUSEBUTTONDOWN {
+				eventName = "mousepressed"
+			}
+			var buttonName string
+			switch e.Button {
+				case sdl.BUTTON_LEFT: buttonName = "left"
+				case sdl.BUTTON_MIDDLE: buttonName = "middle"
+				case sdl.BUTTON_RIGHT: buttonName = "right"
+				case sdl.BUTTON_X1: buttonName = "x"
+				case sdl.BUTTON_X2: buttonName = "y"
+			}
+			eventArgs = []interface{}{buttonName, int(e.X), int(e.Y), int(e.Clicks)}
+		case *sdl.MouseMotionEvent:
+			eventName = "mousemoved"
+			eventArgs = []interface{}{int(e.X), int(e.Y), int(e.XRel), int(e.YRel)}
+		case *sdl.MouseWheelEvent:
+			eventName = "mousewheel"
+			eventArgs = []interface{}{int(e.Y)}
 	}
-	return c.Next(), nil
+
+	luaEventArgs := rt.NewTable()
+	for i, arg := range eventArgs {
+		if num, ok := arg.(int); ok {
+			luaEventArgs.Set(rt.IntValue(int64(i + 1)), rt.IntValue(int64(num)))
+			continue
+		}
+		luaEventArgs.Set(rt.IntValue(int64(i + 1)), rt.AsValue(arg))
+	}
+
+	return c.PushingNext(t.Runtime, rt.StringValue(eventName), rt.TableValue(luaEventArgs)), nil
 }
 
 func systemGetTime(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
