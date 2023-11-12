@@ -47,12 +47,26 @@ func systemLoad(rtm *rt.Runtime) (rt.Value, func()) {
 		"get_fs_type": {systemFsType, 1, false},
 		// rmdir
 		// path_compare
+		"path_compare": {systemPathCompare, 4, false},
 		// load_native_plugn - we can't actually implement for (hopefully obvious) reasons; we're in go land
 	}
+	makeStubs([]string{
+		"text_input",
+	}, exports)
 	mod := rt.NewTable()
 	setExports(rtm, mod, exports)
 
 	return rt.TableValue(mod), nil
+}
+
+func makeStubs(names []string, exports map[string]luaExport) {
+	for _, name := range names {
+		exports[name] = luaExport{luaStub, 0, true}
+	}
+}
+
+func luaStub(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	return c.Next(), nil
 }
 
 func itv(num int64) rt.Value {
@@ -63,10 +77,14 @@ func stv(str string) rt.Value {
 	return rt.StringValue(str)
 }
 
+var i = 0
 func systemPollEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	n := c.Next()
+	fmt.Println("poll called. waiting")
 poll:
 	event := sdl.PollEvent()
+	fmt.Println("past poll call", i)
+	i++
 
 	switch e := event.(type) {
 		case *sdl.QuitEvent:
@@ -397,5 +415,8 @@ func systemFsType(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 // rmdir
 
 // path_compare
+func systemPathCompare(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	return c.PushingNext1(t.Runtime, rt.BoolValue(true)), nil
+}
 
 // load_native_plugin

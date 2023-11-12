@@ -4,6 +4,7 @@ local config = require "core.config"
 local style = require "core.style"
 local keymap = require "core.keymap"
 local translate = require "core.doc.translate"
+local ime = require "core.ime"
 local View = require "core.view"
 
 ---@class core.docview : core.view
@@ -60,6 +61,11 @@ function DocView:new(doc)
   self.doc = assert(doc)
   self.font = "code_font"
   self.last_x_offset = {}
+  self.ime_selection = { from = 0, size = 0 }
+  self.ime_status = false
+  self.hovering_gutter = false
+  self.v_scrollbar:set_forced_status(config.force_scrollbar_status)
+  self.h_scrollbar:set_forced_status(config.force_scrollbar_status)
 end
 
 
@@ -106,9 +112,14 @@ end
 
 function DocView:get_scrollable_size()
   if not config.scroll_past_end then
-    return self:get_line_height() * (#self.doc.lines) + style.padding.y * 2
+    local _, _, _, h_scroll = self.h_scrollbar:get_track_rect()
+    return self:get_line_height() * (#self.doc.lines) + style.padding.y * 2 + h_scroll
   end
   return self:get_line_height() * (#self.doc.lines - 1) + self.size.y
+end
+
+function DocView:get_h_scrollable_size()
+  return math.huge
 end
 
 
@@ -150,24 +161,36 @@ end
 function DocView:get_visible_line_range()
   local x, y, x2, y2 = self:get_content_bounds()
   local lh = self:get_line_height()
-  local minline = math.max(1, math.floor(y / lh))
-  local maxline = math.min(#self.doc.lines, math.floor(y2 / lh) + 1)
+  local minline = math.max(1, math.floor((y - style.padding.y) / lh) + 1)
+  local maxline = math.min(#self.doc.lines, math.floor((y2 - style.padding.y) / lh) + 1)
   return minline, maxline
 end
 
 
 function DocView:get_col_x_offset(line, col)
   local default_font = self:get_font()
+  local _, indent_size = self.doc:get_indent_info()
+  default_font:set_tab_size(indent_size)
   local column = 1
   local xoffset = 0
   for _, type, text in self.doc.highlighter:each_token(line) do
     local font = style.syntax_fonts[type] or default_font
-    for char in common.utf8_chars(text) do
-      if column == col then
+    if font ~= default_font then font:set_tab_size(indent_size) end
+    local length = #text
+    if column + length <= col then
+      xoffset = xoffset + font:get_width(text)
+      column = column + length
+      if column >= col then
         return xoffset
       end
-      xoffset = xoffset + font:get_width(char)
-      column = column + #char
+    else
+      for char in common.utf8_chars(text) do
+        if column >= col then
+          return xoffset
+        end
+        xoffset = xoffset + font:get_width(char)
+        column = column + #char
+      end
     end
   end
 
@@ -180,16 +203,27 @@ function DocView:get_x_offset_col(line, x)
 
   local xoffset, last_i, i = 0, 1, 1
   local default_font = self:get_font()
+  local _, indent_size = self.doc:get_indent_info()
+  default_font:set_tab_size(indent_size)
   for _, type, text in self.doc.highlighter:each_token(line) do
     local font = style.syntax_fonts[type] or default_font
-    for char in common.utf8_chars(text) do
-      local w = font:get_width(char)
-      if xoffset >= x then
-        return (xoffset - x > w / 2) and last_i or i
+    if font ~= default_font then font:set_tab_size(indent_size) end
+    local width = font:get_width(text)
+    -- Don't take the shortcut if the width matches x,
+    -- because we need last_i which should be calculated using utf-8.
+    if xoffset + width < x then
+      xoffset = xoffset + width
+      i = i + #text
+    else
+      for char in common.utf8_chars(text) do
+        local w = font:get_width(char)
+        if xoffset >= x then
+          return (xoffset - x > w / 2) and last_i or i
+        end
+        xoffset = xoffset + w
+        last_i = i
+        i = i + #char
       end
-      xoffset = xoffset + w
-      last_i = i
-      i = i + #char
     end
   end
 
@@ -211,7 +245,8 @@ function DocView:scroll_to_line(line, ignore_if_visible, instant)
   if not (ignore_if_visible and line > min and line < max) then
     local x, y = self:get_line_screen_position(line)
     local ox, oy = self:get_content_offset()
-    self.scroll.to.y = math.max(0, y - oy - self.size.y / 2)
+    local _, _, _, scroll_h = self.h_scrollbar:get_track_rect()
+    self.scroll.to.y = math.max(0, y - oy - (self.size.y - scroll_h) / 2)
     if instant then
       self.scroll.y = self.scroll.to.y
     end
@@ -219,18 +254,26 @@ function DocView:scroll_to_line(line, ignore_if_visible, instant)
 end
 
 
+function DocView:supports_text_input()
+  return true
+end
+
+
 function DocView:scroll_to_make_visible(line, col)
-  local ox, oy = self:get_content_offset()
+  local _, oy = self:get_content_offset()
   local _, ly = self:get_line_screen_position(line, col)
   local lh = self:get_line_height()
-  self.scroll.to.y = common.clamp(self.scroll.to.y, ly - oy - self.size.y + lh * 2, ly - oy - lh)
+  local _, _, _, scroll_h = self.h_scrollbar:get_track_rect()
+  self.scroll.to.y = common.clamp(self.scroll.to.y, ly - oy - self.size.y + scroll_h + lh * 2, ly - oy - lh)
   local gw = self:get_gutter_width()
   local xoffset = self:get_col_x_offset(line, col)
   local xmargin = 3 * self:get_font():get_width(' ')
   local xsup = xoffset + gw + xmargin
   local xinf = xoffset - xmargin
-  if xsup > self.scroll.x + self.size.x then
-    self.scroll.to.x = xsup - self.size.x
+  local _, _, scroll_w = self.v_scrollbar:get_track_rect()
+  local size_x = math.max(0, self.size.x - scroll_w)
+  if xsup > self.scroll.x + size_x then
+    self.scroll.to.x = xsup - size_x
   elseif xinf < self.scroll.x then
     self.scroll.to.x = math.max(0, xinf)
   end
@@ -239,8 +282,14 @@ end
 function DocView:on_mouse_moved(x, y, ...)
   DocView.super.on_mouse_moved(self, x, y, ...)
 
-  if self.hovered_scrollbar_track or self.dragging_scrollbar then
+  self.hovering_gutter = false
+  local gw = self:get_gutter_width()
+
+  if self:scrollbar_hovering() or self:scrollbar_dragging() then
     self.cursor = "arrow"
+  elseif gw > 0 and x >= self.position.x and x <= (self.position.x + gw) then
+    self.cursor = "arrow"
+    self.hovering_gutter = true
   else
     self.cursor = "ibeam"
   end
@@ -273,12 +322,35 @@ function DocView:mouse_selection(doc, snap_type, line1, col1, line2, col2)
     line1, col1 = translate.start_of_word(doc, line1, col1)
     line2, col2 = translate.end_of_word(doc, line2, col2)
   elseif snap_type == "lines" then
-    col1, col2 = 1, math.huge
+    col1, col2, line2 = 1, 1, line2 + 1
   end
   if swap then
     return line2, col2, line1, col1
   end
   return line1, col1, line2, col2
+end
+
+
+function DocView:on_mouse_pressed(button, x, y, clicks)
+  if button ~= "left" or not self.hovering_gutter then
+    return DocView.super.on_mouse_pressed(self, button, x, y, clicks)
+  end
+  local line = self:resolve_screen_position(x, y)
+  if keymap.modkeys["shift"] then
+    local sline, scol, sline2, scol2 = self.doc:get_selection(true)
+    if line > sline then
+      self.doc:set_selection(sline, 1, line,  #self.doc.lines[line])
+    else
+      self.doc:set_selection(line, 1, sline2, #self.doc.lines[sline2])
+    end
+  else
+    if clicks == 1 then
+      self.doc:set_selection(line, 1, line, 1)
+    elseif clicks == 2 then
+      self.doc:set_selection(line, 1, line, #self.doc.lines[line])
+    end
+  end
+  return true
 end
 
 
@@ -292,13 +364,53 @@ function DocView:on_text_input(text)
   self.doc:text_input(text)
 end
 
+function DocView:on_ime_text_editing(text, start, length)
+  self.doc:ime_text_editing(text, start, length)
+  self.ime_status = #text > 0
+  self.ime_selection.from = start
+  self.ime_selection.size = length
+
+  -- Set the composition bounding box that the system IME
+  -- will consider when drawing its interface
+  local line1, col1, line2, col2 = self.doc:get_selection(true)
+  local col = math.min(col1, col2)
+  self:update_ime_location()
+  self:scroll_to_make_visible(line1, col + start)
+end
+
+---Update the composition bounding box that the system IME
+---will consider when drawing its interface
+function DocView:update_ime_location()
+  if not self.ime_status then return end
+
+  local line1, col1, line2, col2 = self.doc:get_selection(true)
+  local x, y = self:get_line_screen_position(line1)
+  local h = self:get_line_height()
+  local col = math.min(col1, col2)
+
+  local x1, x2 = 0, 0
+
+  if self.ime_selection.size > 0 then
+    -- focus on a part of the text
+    local from = col + self.ime_selection.from
+    local to = from + self.ime_selection.size
+    x1 = self:get_col_x_offset(line1, from)
+    x2 = self:get_col_x_offset(line1, to)
+  else
+    -- focus the whole text
+    x1 = self:get_col_x_offset(line1, col1)
+    x2 = self:get_col_x_offset(line2, col2)
+  end
+
+  ime.set_location(x + x1, y, x2 - x1, h)
+end
 
 function DocView:update()
   -- scroll to make caret visible and reset blink timer if it moved
   local line1, col1, line2, col2 = self.doc:get_selection()
   if (line1 ~= self.last_line1 or col1 ~= self.last_col1 or
       line2 ~= self.last_line2 or col2 ~= self.last_col2) and self.size.x > 0 then
-    if core.active_view == self then
+    if core.active_view == self and not ime.editing then
       self:scroll_to_make_visible(line1, col1)
     end
     core.blink_reset()
@@ -316,6 +428,8 @@ function DocView:update()
     core.blink_timer = tb
   end
 
+  self:update_ime_location()
+
   DocView.super.update(self)
 end
 
@@ -329,10 +443,19 @@ end
 function DocView:draw_line_text(line, x, y)
   local default_font = self:get_font()
   local tx, ty = x, y + self:get_line_text_y_offset()
-  for _, type, text in self.doc.highlighter:each_token(line) do
+  local last_token = nil
+  local tokens = self.doc.highlighter:get_line(line).tokens
+  local tokens_count = #tokens
+  if string.sub(tokens[tokens_count], -1) == "\n" then
+    last_token = tokens_count - 1
+  end
+  for tidx, type, text in self.doc.highlighter:each_token(line) do
     local color = style.syntax[type]
     local font = style.syntax_fonts[type] or default_font
+    -- do not render newline, fixes issue #1164
+    if tidx == last_token then text = text:sub(1, -2) end
     tx = renderer.draw_text(font, text, tx, ty, color)
+    if tx > self.position.x + self.size.x then break end
   end
   return self:get_line_height()
 end
@@ -399,17 +522,45 @@ function DocView:draw_line_gutter(line, x, y, width)
 end
 
 
+function DocView:draw_ime_decoration(line1, col1, line2, col2)
+  local x, y = self:get_line_screen_position(line1)
+  local line_size = math.max(1, SCALE)
+  local lh = self:get_line_height()
+
+  -- Draw IME underline
+  local x1 = self:get_col_x_offset(line1, col1)
+  local x2 = self:get_col_x_offset(line2, col2)
+  renderer.draw_rect(x + math.min(x1, x2), y + lh - line_size, math.abs(x1 - x2), line_size, style.text)
+
+  -- Draw IME selection
+  local col = math.min(col1, col2)
+  local from = col + self.ime_selection.from
+  local to = from + self.ime_selection.size
+  x1 = self:get_col_x_offset(line1, from)
+  if from ~= to then
+    x2 = self:get_col_x_offset(line1, to)
+    line_size = style.caret_width
+    renderer.draw_rect(x + math.min(x1, x2), y + lh - line_size, math.abs(x1 - x2), line_size, style.caret)
+  end
+  self:draw_caret(x + x1, y)
+end
+
+
 function DocView:draw_overlay()
   if core.active_view == self then
     local minline, maxline = self:get_visible_line_range()
     -- draw caret if it overlaps this line
     local T = config.blink_period
-    for _, line, col in self.doc:get_selections() do
-      if line >= minline and line <= maxline
+    for _, line1, col1, line2, col2 in self.doc:get_selections() do
+      if line1 >= minline and line1 <= maxline
       and system.window_has_focus() then
-        if config.disable_blink
-        or (core.blink_timer - core.blink_start) % T < T / 2 then
-          self:draw_caret(self:get_line_screen_position(line, col))
+        if ime.editing then
+          self:draw_ime_decoration(line1, col1, line2, col2)
+        else
+          if config.disable_blink
+          or (core.blink_timer - core.blink_start) % T < T / 2 then
+            self:draw_caret(self:get_line_screen_position(line1, col1))
+          end
         end
       end
     end

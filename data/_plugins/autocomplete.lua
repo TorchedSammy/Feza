@@ -271,7 +271,7 @@ local function get_partial_symbol()
 end
 
 local function get_active_view()
-  if getmetatable(core.active_view) == DocView then
+  if core.active_view:is(DocView) then
     return core.active_view
   end
 end
@@ -588,8 +588,11 @@ function autocomplete.open(on_close)
   end
 
   local av = get_active_view()
-  last_line, last_col = av.doc:get_selection()
-  update_suggestions()
+  if av then
+    partial = get_partial_symbol()
+    last_line, last_col = av.doc:get_selection()
+    update_suggestions()
+  end
 end
 
 function autocomplete.close()
@@ -621,13 +624,13 @@ end
 -- Commands
 --
 local function predicate()
-  return get_active_view() and #suggestions > 0
+  local active_docview = get_active_view()
+  return active_docview and #suggestions > 0, active_docview
 end
 
 command.add(predicate, {
-  ["autocomplete:complete"] = function()
-    local doc = core.active_view.doc
-    local line, col = doc:get_selection()
+  ["autocomplete:complete"] = function(dv)
+    local doc = dv.doc
     local item = suggestions[suggestions_idx]
     local text = item.text
     local inserted = false
@@ -635,19 +638,34 @@ command.add(predicate, {
       inserted = item.onselect(suggestions_idx, item)
     end
     if not inserted then
-      doc:insert(line, col, text)
-      doc:remove(line, col, line, col - #partial)
-      doc:set_selection(line, col + #text - #partial)
+      local current_partial = get_partial_symbol()
+      local sz = #current_partial
+
+      for idx, line1, col1, line2, col2 in doc:get_selections(true) do
+        local n = col1 - 1
+        local line = doc.lines[line1]
+        for i = 1, sz + 1 do
+          local j = sz - i
+          local subline = line:sub(n - j, n)
+          local subpartial = current_partial:sub(i, -1)
+          if subpartial == subline then
+            doc:remove(line1, col1, line2, n - j)
+            break
+          end
+        end
+      end
+
+      doc:text_input(item.text)
     end
     reset_suggestions()
   end,
 
   ["autocomplete:previous"] = function()
-    suggestions_idx = math.max(suggestions_idx - 1, 1)
+    suggestions_idx = (suggestions_idx - 2) % #suggestions + 1
   end,
 
   ["autocomplete:next"] = function()
-    suggestions_idx = math.min(suggestions_idx + 1, #suggestions)
+    suggestions_idx = (suggestions_idx % #suggestions) + 1
   end,
 
   ["autocomplete:cycle"] = function()

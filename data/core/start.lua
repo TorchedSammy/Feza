@@ -1,6 +1,9 @@
 -- this file is used by lite-xl to setup the Lua environment when starting
-VERSION = "@PROJECT_VERSION@"
-MOD_VERSION = "3"
+VERSION = "2.1.1 (git-43c73ca2)"
+MOD_VERSION_MAJOR = 3
+MOD_VERSION_MINOR = 0
+MOD_VERSION_PATCH = 0
+MOD_VERSION_STRING = string.format("%d.%d.%d", MOD_VERSION_MAJOR, MOD_VERSION_MINOR, MOD_VERSION_PATCH)
 
 SCALE = tonumber(os.getenv("LITE_SCALE") or os.getenv("GDK_SCALE") or os.getenv("QT_SCALE_FACTOR")) or SCALE
 PATHSEP = package.config:sub(1, 1)
@@ -9,24 +12,34 @@ EXEDIR = EXEFILE:match("^(.+)[/\\][^/\\]+$")
 if MACOS_RESOURCES then
   DATADIR = MACOS_RESOURCES
 else
-  local prefix = EXEDIR:match("^(.+)[/\\]bin$")
-  DATADIR = prefix and (prefix .. '/share/lite-xl') or (EXEDIR .. '/data')
+  local prefix = os.getenv('LITE_PREFIX') or EXEDIR:match("^(.+)[/\\]bin$")
+  DATADIR = prefix and (prefix .. PATHSEP .. 'share' .. PATHSEP .. 'lite-xl') or (EXEDIR .. PATHSEP .. 'data')
 end
-USERDIR = (system.get_file_info(EXEDIR .. '/user') and (EXEDIR .. '/user'))
-       or ((os.getenv("XDG_CONFIG_HOME") and os.getenv("XDG_CONFIG_HOME") .. "/lite-xl"))
-       or (HOME and (HOME .. '/.config/lite-xl'))
+USERDIR = (system.get_file_info(EXEDIR .. PATHSEP .. 'user') and (EXEDIR .. PATHSEP .. 'user'))
+       or os.getenv("LITE_USERDIR")
+       or ((os.getenv("XDG_CONFIG_HOME") and os.getenv("XDG_CONFIG_HOME") .. PATHSEP .. "lite-xl"))
+       or (HOME and (HOME .. PATHSEP .. '.config' .. PATHSEP .. 'lite-xl'))
 
 package.path = DATADIR .. '/?.lua;'
 package.path = DATADIR .. '/?/init.lua;' .. package.path
 package.path = USERDIR .. '/?.lua;' .. package.path
 package.path = USERDIR .. '/?/init.lua;' .. package.path
 
-local dynamic_suffix = PLATFORM == "Mac OS X" and 'lib' or (PLATFORM == "Windows" and 'dll' or 'so')
-package.cpath = DATADIR .. '/?.' .. dynamic_suffix .. ";" .. USERDIR .. '/?.' .. dynamic_suffix
+local suffix = PLATFORM == "Windows" and 'dll' or 'so'
+package.cpath =
+  USERDIR .. '/?.' .. ARCH .. "." .. suffix .. ";" ..
+  USERDIR .. '/?/init.' .. ARCH .. "." .. suffix .. ";" ..
+  USERDIR .. '/?.' .. suffix .. ";" ..
+  USERDIR .. '/?/init.' .. suffix .. ";" ..
+  DATADIR .. '/?.' .. ARCH .. "." .. suffix .. ";" ..
+  DATADIR .. '/?/init.' .. ARCH .. "." .. suffix .. ";" ..
+  DATADIR .. '/?.' .. suffix .. ";" ..
+  DATADIR .. '/?/init.' .. suffix .. ";"
+
 package.native_plugins = {}
 package.searchers = { package.searchers[1], package.searchers[2], function(modname)
-  local path = package.searchpath(modname, package.cpath)
-  if not path then return nil end
+  local path, err = package.searchpath(modname, package.cpath)
+  if not path then return err end
   return system.load_native_plugin, path
 end }
 

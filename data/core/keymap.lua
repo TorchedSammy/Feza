@@ -1,6 +1,7 @@
 local core = require "core"
 local command = require "core.command"
 local config = require "core.config"
+local ime = require "core.ime"
 local keymap = {}
 
 ---@alias keymap.shortcut string
@@ -34,6 +35,23 @@ local modkey_map = modkeys_os.map
 local modkeys = modkeys_os.keys
 
 
+---Normalizes a stroke sequence to follow the modkeys table
+---@param stroke string
+---@return string
+local function normalize_stroke(stroke)
+  local stroke_table = {}
+  for modkey in stroke:gmatch("(%w+)%+") do
+    table.insert(stroke_table, modkey)
+  end
+  if not next(stroke_table) then
+    return stroke
+  end
+  table.sort(stroke_table)
+  local new_stroke = table.concat(stroke_table, "+") .. "+"
+  return new_stroke .. stroke:sub(new_stroke:len() + 1)
+end
+
+
 ---Generates a stroke sequence including currently pressed mod keys.
 ---@param key string
 ---@return string
@@ -44,9 +62,8 @@ local function key_to_stroke(key)
       stroke = stroke .. mk .. "+"
     end
   end
-  return stroke .. key
+  return normalize_stroke(stroke) .. key
 end
-
 
 ---Remove the given value from an array associated to a key in a table.
 ---@param tbl table<string, string> The table containing the key
@@ -73,6 +90,7 @@ end
 ---@param map keymap.map
 local function remove_duplicates(map)
   for stroke, commands in pairs(map) do
+    stroke = normalize_stroke(stroke)
     if type(commands) == "string" or type(commands) == "function" then
       commands = { commands }
     end
@@ -95,11 +113,12 @@ local function remove_duplicates(map)
   end
 end
 
-
 ---Add bindings by replacing commands that were previously assigned to a shortcut.
 ---@param map keymap.map
 function keymap.add_direct(map)
   for stroke, commands in pairs(map) do
+    stroke = normalize_stroke(stroke)
+  
     if type(commands) == "string" or type(commands) == "function" then
       commands = { commands }
     end
@@ -127,6 +146,7 @@ function keymap.add(map, overwrite)
     if macos then
       stroke = stroke:gsub("%f[%a]ctrl%f[%A]", "cmd")
     end
+    stroke = normalize_stroke(stroke)
     if overwrite then
       if keymap.map[stroke] then
         for _, cmd in ipairs(keymap.map[stroke]) do
@@ -152,7 +172,7 @@ end
 ---@param shortcut string
 ---@param cmd string
 function keymap.unbind(shortcut, cmd)
-  remove_only(keymap.map, shortcut, cmd)
+  remove_only(keymap.map, normalize_stroke(shortcut), cmd)
   remove_only(keymap.reverse_map, cmd, shortcut)
 end
 
@@ -177,6 +197,10 @@ end
 -- Events listening
 --------------------------------------------------------------------------------
 function keymap.on_key_pressed(k, ...)
+  -- In MacOS and Windows during IME composition input is still sent to us
+  -- so we just ignore it
+  if PLATFORM ~= "Linux" and ime.editing then return false end
+
   local mk = modkey_map[k]
   if mk then
     keymap.modkeys[mk] = true
@@ -207,9 +231,32 @@ function keymap.on_key_pressed(k, ...)
   return false
 end
 
-function keymap.on_mouse_wheel(delta, ...)
-  return not (keymap.on_key_pressed("wheel" .. (delta > 0 and "up" or "down"), delta, ...)
-    or keymap.on_key_pressed("wheel", delta, ...))
+function keymap.on_mouse_wheel(delta_y, delta_x, ...)
+  local y_direction = delta_y > 0 and "up" or "down"
+  local x_direction = delta_x > 0 and "left" or "right"
+  -- Try sending a "cumulative" event for both scroll directions
+  if delta_y ~= 0 and delta_x ~= 0 then
+    local result = keymap.on_key_pressed("wheel" .. y_direction .. x_direction, delta_y, delta_x, ...)
+    if not result then
+      result = keymap.on_key_pressed("wheelyx", delta_y, delta_x, ...)
+    end
+    if result then return true end
+  end
+  -- Otherwise send each direction as its own separate event
+  local y_result, x_result
+  if delta_y ~= 0 then
+    y_result = keymap.on_key_pressed("wheel" .. y_direction, delta_y, ...)
+    if not y_result then
+      y_result = keymap.on_key_pressed("wheel", delta_y, ...)
+    end
+  end
+  if delta_x ~= 0 then
+    x_result = keymap.on_key_pressed("wheel" .. x_direction, delta_x, ...)
+    if not x_result then
+      x_result = keymap.on_key_pressed("hwheel", delta_x, ...)
+    end
+  end
+  return y_result or x_result
 end
 
 function keymap.on_mouse_pressed(button, x, y, clicks)
@@ -244,7 +291,7 @@ keymap.add_direct {
   ["ctrl+n"] = "core:new-doc",
   ["ctrl+shift+c"] = "core:change-project-folder",
   ["ctrl+shift+o"] = "core:open-project-folder",
-  ["ctrl+shift+r"] = "core:restart",
+  ["ctrl+alt+r"] = "core:restart",
   ["alt+return"] = "core:toggle-fullscreen",
   ["f11"] = "core:toggle-fullscreen",
 
@@ -272,6 +319,10 @@ keymap.add_direct {
   ["alt+8"] = "root:switch-to-tab-8",
   ["alt+9"] = "root:switch-to-tab-9",
   ["wheel"] = "root:scroll",
+  ["hwheel"] = "root:horizontal-scroll",
+  ["shift+wheel"] = "root:horizontal-scroll",
+  ["wheelup"] = "root:scroll-hovered-tabs-backward",
+  ["wheeldown"] = "root:scroll-hovered-tabs-forward",
 
   ["ctrl+f"] = "find-replace:find",
   ["ctrl+r"] = "find-replace:replace",
@@ -337,7 +388,7 @@ keymap.add_direct {
   ["shift+1lclick"] = "doc:select-to-cursor",
   ["ctrl+1lclick"] = "doc:split-cursor",
   ["1lclick"] = "doc:set-cursor",
-  ["2lclick"] = "doc:set-cursor-word",
+  ["2lclick"] = { "doc:set-cursor-word", "emptyview:new-doc", "tabbar:new-doc" },
   ["3lclick"] = "doc:set-cursor-line",
   ["shift+left"] = "doc:select-to-previous-char",
   ["shift+right"] = "doc:select-to-next-char",

@@ -219,7 +219,7 @@ function LineWrapping.draw_guide(docview)
 end
 
 function LineWrapping.update_docview_breaks(docview)
-  local x,y,w,h = docview:get_scrollbar_rect()
+  local x,y,w,h = docview.v_scrollbar:get_thumb_rect()
   local width = (type(config.plugins.linewrapping.width_override) == "function" and config.plugins.linewrapping.width_override(docview))
     or config.plugins.linewrapping.width_override or (docview.size.x - docview:get_gutter_width() - w)
   if (not docview.wrapped_settings or docview.wrapped_settings.width == nil or width ~= docview.wrapped_settings.width) then
@@ -310,7 +310,7 @@ local function get_line_col_from_index_and_x(docview, idx, x)
 end
 
 
-local open_files = {}
+local open_files = setmetatable({ }, { __mode = "k" })
 
 local old_doc_insert = Doc.raw_insert
 function Doc:raw_insert(line, col, text, undo_stack, time)
@@ -355,18 +355,34 @@ function DocView:get_scrollable_size()
   return self:get_line_height() * (get_total_wrapped_lines(self) - 1) + self.size.y
 end
 
+local old_get_h_scrollable_size = DocView.get_h_scrollable_size
+function DocView:get_h_scrollable_size(...)
+  if self.wrapping_enabled then return 0 end
+  return old_get_h_scrollable_size(self, ...)
+end
+
 local old_new = DocView.new
 function DocView:new(doc)
   old_new(self, doc)
   if not open_files[doc] then open_files[doc] = {} end
   table.insert(open_files[doc], self)
   if config.plugins.linewrapping.enable_by_default then
+    self.wrapping_enabled = true
     LineWrapping.update_docview_breaks(self)
+  else
+    self.wrapping_enabled = false
   end
+end
+
+local old_scroll_to_line = DocView.scroll_to_line
+function DocView:scroll_to_line(...)
+  if self.wrapping_enabled then LineWrapping.update_docview_breaks(self) end
+  old_scroll_to_line(self, ...)
 end
 
 local old_scroll_to_make_visible = DocView.scroll_to_make_visible
 function DocView:scroll_to_make_visible(line, col)
+  if self.wrapping_enabled then LineWrapping.update_docview_breaks(self) end
   old_scroll_to_make_visible(self, line, col)
   if self.wrapped_settings then self.scroll.to.x = 0 end
 end
@@ -469,7 +485,7 @@ local old_draw_line_body = DocView.draw_line_body
 function DocView:draw_line_body(line, x, y)
   if not self.wrapped_settings then return old_draw_line_body(self, line, x, y) end
   local lh = self:get_line_height()
-  local idx0 = get_line_idx_col_count(self, line)
+  local idx0, _, count = get_line_idx_col_count(self, line)
   for lidx, line1, col1, line2, col2 in self.doc:get_selections(true) do
     if line >= line1 and line <= line2 then
       if line1 ~= line then col1 = 1 end
@@ -477,12 +493,14 @@ function DocView:draw_line_body(line, x, y)
       if col1 ~= col2 then
         local idx1, ncol1 = get_line_idx_col_count(self, line, col1)
         local idx2, ncol2 = get_line_idx_col_count(self, line, col2)
+        local start = 0
         for i = idx1, idx2 do
           local x1, x2 = x + (idx1 == i and self:get_col_x_offset(line1, col1) or 0)
           if idx2 == i then
             x2 = x + self:get_col_x_offset(line, col2)
           else
-            x2 = x + self:get_col_x_offset(line, get_idx_line_length(self, i, line) + 1, true)
+            start = start + get_idx_line_length(self, i, line)
+            x2 = x + self:get_col_x_offset(line, start + 1, true)
           end
           renderer.draw_rect(x1, y + (i - idx0) * lh, x2 - x1, lh, style.selection)
         end
@@ -498,7 +516,6 @@ function DocView:draw_line_body(line, x, y)
     end
   end
   if draw_highlight then
-    local _, _, count = get_line_idx_col_count(self, line)
     for i=1,count do
       self:draw_line_highlight(x + self.scroll.x, y + lh * (i - 1))
     end
@@ -557,11 +574,13 @@ end
 command.add(nil, {
   ["line-wrapping:enable"] = function()
     if core.active_view and core.active_view.doc then
+      core.active_view.wrapping_enabled = true
       LineWrapping.update_docview_breaks(core.active_view)
     end
   end,
   ["line-wrapping:disable"] = function()
     if core.active_view and core.active_view.doc then
+      core.active_view.wrapping_enabled = false
       LineWrapping.reconstruct_breaks(core.active_view, core.active_view:get_font(), math.huge)
     end
   end,

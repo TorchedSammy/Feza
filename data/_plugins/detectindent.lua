@@ -37,7 +37,11 @@ local function optimal_indent_from_stat(stat)
       elseif
         indent > stat[y]
         and
-        indent_occurrences_more_than_once(stat, y)
+        (
+          indent_occurrences_more_than_once(stat, y)
+          or
+          (y == count and stat[y] > 1)
+        )
       then
         score = 0
         break
@@ -75,7 +79,9 @@ local function escape_comment_tokens(token)
 end
 
 
-local function get_comment_patterns(syntax)
+local function get_comment_patterns(syntax, _loop)
+  _loop = _loop or 1
+  if _loop > 5 then return end
   if comments_cache[syntax] then
     if #comments_cache[syntax] > 0 then
       return comments_cache[syntax]
@@ -116,16 +122,16 @@ local function get_comment_patterns(syntax)
         end
         if type(pattern.regex) == "table" then
           table.insert(comments, {
-            "r", regex.compile(startp), regex.compile(pattern.regex[2])
+            "r", regex.compile(startp), regex.compile(pattern.regex[2]), r=startp
           })
         elseif not_is_string then
-          table.insert(comments, {"r", regex.compile(startp)})
+          table.insert(comments, {"r", regex.compile(startp), r=startp})
         end
       end
     elseif pattern.syntax then
       local subsyntax = type(pattern.syntax) == 'table' and pattern.syntax
         or core_syntax.get("file"..pattern.syntax, "")
-      local sub_comments = get_comment_patterns(subsyntax)
+      local sub_comments = get_comment_patterns(subsyntax, _loop + 1)
       if sub_comments then
         for s=1, #sub_comments do
           table.insert(comments, sub_comments[s])
@@ -150,6 +156,25 @@ local function get_comment_patterns(syntax)
       table.insert(comments, {"p", "^%s*" .. block_comment[1], block_comment[2]})
     end
   end
+  -- Put comments first and strings last
+  table.sort(comments, function(c1, c2)
+    local comment1, comment2 = false, false
+    if
+      (c1[1] == "p" and string.find(c1[2], "^%s*", 1, true))
+      or
+      (c1[1] == "r" and string.find(c1["r"], "^\\s*", 1, true))
+    then
+      comment1 = true
+    end
+    if
+      (c2[1] == "p" and string.find(c2[2], "^%s*", 1, true))
+      or
+      (c2[1] == "r" and string.find(c2["r"], "^\\s*", 1, true))
+    then
+      comment2 = true
+    end
+    return comment1 and not comment2
+  end)
   comments_cache[syntax] = comments
   if #comments > 0 then
     return comments
@@ -190,11 +215,11 @@ local function get_non_empty_lines(syntax, lines)
                 end
               else
                 if comment[3] then
-                  local start, ending = regex.match(
+                  local start, ending = regex.find_offsets(
                     comment[2], line, 1, regex.ANCHORED
                   )
                   if start then
-                    if not regex.match(
+                    if not regex.find_offsets(
                         comment[3], line, ending+1, regex.ANCHORED
                       )
                     then
@@ -204,7 +229,7 @@ local function get_non_empty_lines(syntax, lines)
                     end
                     break
                   end
-                elseif regex.match(comment[2], line, 1, regex.ANCHORED) then
+                elseif regex.find_offsets(comment[2], line, 1, regex.ANCHORED) then
                   is_comment = true
                   break
                 end
@@ -214,7 +239,7 @@ local function get_non_empty_lines(syntax, lines)
             is_comment = true
             inside_comment = false
             end_pattern = nil
-          elseif end_regex and regex.match(end_regex, line) then
+          elseif end_regex and regex.find_offsets(end_regex, line) then
             is_comment = true
             inside_comment = false
             end_regex = nil
@@ -299,10 +324,10 @@ local function set_indent_type(doc, type)
   doc.indent_info = cache[doc]
 end
 
-local function set_indent_type_command()
+local function set_indent_type_command(dv)
   core.command_view:enter("Specify indent style for this file", {
     submit = function(value)
-      local doc = core.active_view.doc
+      local doc = dv.doc
       value = value:lower()
       set_indent_type(doc, value == "tabs" and "hard" or "soft")
     end,
@@ -327,11 +352,11 @@ local function set_indent_size(doc, size)
   doc.indent_info = cache[doc]
 end
 
-local function set_indent_size_command()
+local function set_indent_size_command(dv)
   core.command_view:enter("Specify indent size for current file", {
     submit = function(value)
       value = math.floor(tonumber(value))
-      local doc = core.active_view.doc
+      local doc = dv.doc
       set_indent_size(doc, value)
     end,
     validate = function(value)

@@ -100,7 +100,7 @@ func rendererClipRect(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	}
 
 	cv.Rect(x, y, w, h)
-	cv.Clip()
+	//cv.Clip()
 
 	return c.Next(), nil
 }
@@ -110,24 +110,26 @@ func rendererGetSize(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 
 	return c.PushingNext(t.Runtime, rt.IntValue(int64(w)), rt.IntValue(int64(h))), nil
 }
+
 func rendererDrawText(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	if err := c.CheckNArgs(5); err != nil {
 		return nil, err
 	}
 
-	_, err := c.StringArg(0)
+	_, err := fontArg(c, 0)
 	if err != nil {
 		return nil, err
 	}
+
 	text, err := c.StringArg(1)
 	if err != nil {
 		return nil, err
 	}
-	x, err := c.FloatArg(2)
+	x, err := numOrIntArg(c, 2)
 	if err != nil {
 		return nil, err
 	}
-	y, err := c.FloatArg(3)
+	y, err := numOrIntArg(c, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +160,9 @@ type font struct{
 func rFontLoader(rtm *rt.Runtime) rt.Value {
 	fontMethods := rt.NewTable()
 	r.SetEnvGoFunc(fontMethods, "copy", rFontCopy, 1, true)
+	r.SetEnvGoFunc(fontMethods, "get_height", rFontHeight, 1, true)
+	r.SetEnvGoFunc(fontMethods, "get_width", rFontWidth, 1, true)
+	r.SetEnvGoFunc(fontMethods, "set_tab_size", luaStub, 1, true)
 
 	fontMeta := rt.NewTable()
 	r.SetEnv(fontMeta, "__index", rt.TableValue(fontMethods))
@@ -198,7 +203,7 @@ func rFontLoad(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	if err != nil {
 		return nil, err
 	}
-	size, err := c.IntArg(1)
+	size, err := c.FloatArg(1)
 	if err != nil {
 		return nil, err
 	}
@@ -221,14 +226,45 @@ func rFontCopy(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 
 	size := fnt.size
 	if len(c.Etc()) != 0 {
-		sz, ok := c.Etc()[0].TryInt()
+		sz, ok := c.Etc()[0].TryFloat()
 		if !ok {
 			return nil, fmt.Errorf("???")
 		}
 		size = int(sz)
+		fmt.Println(size)
 	}
 
 	f := &font{fnt.f, size}
 	fontMeta := t.Registry(fontMetaKey)
 	return c.PushingNext1(t.Runtime, t.NewUserDataValue(f, fontMeta.AsTable())), nil
+}
+
+func rFontHeight(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	_, err := fontArg(c, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.PushingNext1(t.Runtime, rt.IntValue(20)), nil
+}
+
+func rFontWidth(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	fnt, err := fontArg(c, 0)
+	if err != nil {
+		return nil, err
+	}
+
+/*
+	text, err := c.StringArg(1)
+	if err != nil {
+		return nil, err
+	}
+*/
+	text := "lol"
+	cv.Save()
+	cv.SetFont(fnt.f, float64(fnt.size))
+	metrics := cv.MeasureText(text)
+	cv.Restore()
+	
+	return c.PushingNext1(t.Runtime, rt.FloatValue(metrics.Width)), nil
 }

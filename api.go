@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"runtime"
@@ -13,6 +14,22 @@ type luaExport struct {
 	Function rt.GoFunctionFunc
 	ArgNum int
 	Variadic bool
+}
+
+func numOrIntArg(c *rt.GoCont, n int) (float64, error) {
+	val := c.Arg(n)
+	fmt.Println(val.TypeName())
+	valInt, ok := val.TryInt()
+	if ok {
+		return float64(valInt), nil
+	}
+
+	valFloat, ok := val.TryFloat()
+	if ok {
+		return valFloat, nil
+	}
+
+	return 0.0, fmt.Errorf("#%d must be a number or integer", n + 1)
 }
 
 func setExports(rtm *rt.Runtime, tbl *rt.Table, exports map[string]luaExport) {
@@ -64,4 +81,5 @@ func setupAPI() {
 	r.SetEnv(env, "SCALE", rt.IntValue(1)) // TODO: get dpi
 	r.SetEnv(env, "EXEFILE", rt.StringValue(exe))
 	r.SetEnv(env, "HOME", rt.StringValue(homedir))
+	r.SetEnv(env, "ARCH", rt.StringValue("x86-64_linux"))
 }

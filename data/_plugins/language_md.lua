@@ -42,9 +42,9 @@ syntax.add {
     -- blockquote
     { pattern = "^%s*>+%s",                 type = "string" },
     -- alternative bold italic formats
-    { pattern = { "%s___", "___%f[%s]" },   type = "markdown_bold_italic" },
-    { pattern = { "%s__", "__%f[%s]" },     type = "markdown_bold" },
-    { pattern = { "%s_[%S]", "_%f[%s]" },   type = "markdown_italic" },
+    { pattern = { "%s___", "___" },         type = "markdown_bold_italic" },
+    { pattern = { "%s__", "__" },           type = "markdown_bold" },
+    { pattern = { "%s_[%S]", "_" },         type = "markdown_italic" },
     -- reference links
     {
       pattern = "^%s*%[%^()["..in_squares_match.."]+()%]: ",
@@ -112,6 +112,7 @@ syntax.add {
     { pattern = { "%$%$", "%$%$", "\\"  },  type = "string", syntax = ".tex"},
     { regex   = { "\\$", [[\$|(?=\\*\n)]], "\\" },  type = "string", syntax = ".tex"},
     -- code blocks
+    { pattern = { "```caddyfile", "```" },  type = "string", syntax = "Caddyfile" },
     { pattern = { "```c++", "```" },        type = "string", syntax = ".cpp" },
     { pattern = { "```cpp", "```" },        type = "string", syntax = ".cpp" },
     { pattern = { "```python", "```" },     type = "string", syntax = ".py" },
@@ -146,17 +147,19 @@ syntax.add {
     { pattern = { "```go", "```" },         type = "string", syntax = ".go" },
     { pattern = { "```lobster", "```" },    type = "string", syntax = ".lobster" },
     { pattern = { "```liquid", "```" },     type = "string", syntax = ".liquid" },
+    { pattern = { "```nix", "```" },        type = "string", syntax = ".nix" },
     { pattern = { "```", "```" },           type = "string" },
     { pattern = { "``", "``" },             type = "string" },
     { pattern = { "%f[\\`]%`[%S]", "`" },   type = "string" },
+    -- lines
+    { pattern = "^%-%-%-+\n" ,              type = "comment" },
+    { pattern = "^%*%*%*+\n",               type = "comment" },
+    { pattern = "^___+\n",                  type = "comment" },
+    { pattern = "^===+\n",                  type = "comment" },
     -- strike
     { pattern = { "~~", "~~" },             type = "keyword2" },
     -- highlight
     { pattern = { "==", "==" },             type = "literal" },
-    -- lines
-    { pattern = "^%-%-%-+$" ,               type = "comment" },
-    { pattern = "^%*%*%*+$",                type = "comment" },
-    { pattern = "^___+$",                   type = "comment" },
     -- bold and italic
     { pattern = { "%*%*%*%S", "%*%*%*" },   type = "markdown_bold_italic" },
     { pattern = { "%*%*%S", "%*%*" },       type = "markdown_bold" },
@@ -166,16 +169,16 @@ syntax.add {
       type = "markdown_italic"
     },
     -- alternative bold italic formats
-    { pattern = "^___[%s%p%w]+___%s" ,      type = "markdown_bold_italic" },
-    { pattern = "^__[%s%p%w]+__%s" ,        type = "markdown_bold" },
-    { pattern = "^_[%s%p%w]+_%s" ,          type = "markdown_italic" },
+    { pattern = "^___[%s%p%w]+___" ,        type = "markdown_bold_italic" },
+    { pattern = "^__[%s%p%w]+__" ,          type = "markdown_bold" },
+    { pattern = "^_[%s%p%w]+_" ,            type = "markdown_italic" },
     -- heading with custom id
     {
       pattern = "^#+%s[%w%s%p]+(){()#[%w%-]+()}",
       type = { "keyword", "function", "string", "function" }
     },
     -- headings
-    { pattern = "^#+%s.+$",                 type = "keyword" },
+    { pattern = "^#+%s.+\n",                type = "keyword" },
     -- superscript and subscript
     {
       pattern = "%^()%d+()%^",

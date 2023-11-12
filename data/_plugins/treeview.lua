@@ -9,10 +9,15 @@ local View = require "core.view"
 local ContextMenu = require "core.contextmenu"
 local RootView = require "core.rootview"
 local CommandView = require "core.commandview"
+local DocView = require "core.docview"
 
 config.plugins.treeview = common.merge({
   -- Default treeview width
-  size = 200 * SCALE
+  size = 200 * SCALE,
+  highlight_focused_file = true,
+  expand_dirs_to_focused_file = false,
+  scroll_to_focused_file = false,
+  animate_scroll_to_focused_file = true
 }, config.plugins.treeview)
 
 local tooltip_offset = style.font:get_height()
@@ -46,24 +51,10 @@ function TreeView:new()
   self.target_size = config.plugins.treeview.size
   self.cache = {}
   self.tooltip = { x = 0, y = 0, begin = 0, alpha = 0 }
-  self.cursor_pos = { x = 0, y = 0 }
+  self.last_scroll_y = 0
 
   self.item_icon_width = 0
   self.item_text_spacing = 0
-
-  self:add_core_hooks()
-end
-
-
-function TreeView:add_core_hooks()
-  -- When a file or directory is deleted we delete the corresponding cache entry
-  -- because if the entry is recreated we may use wrong information from cache.
-  local on_delete = core.on_dirmonitor_delete
-  core.on_dirmonitor_delete = function(dir, filepath)
-    local cache = self.cache[dir.name]
-    if cache then cache[filepath] = nil end
-    on_delete(dir, filepath)
-  end
 end
 
 
@@ -86,7 +77,7 @@ function TreeView:get_cached(dir, item, dirname)
   -- used only to identify the entry into the cache.
   local cache_name = item.filename .. (item.topdir and ":" or "")
   local t = dir_cache[cache_name]
-  if not t then
+  if not t or t.type ~= item.type then
     t = {}
     local basename = common.basename(item.filename)
     if item.topdir then
@@ -183,18 +174,71 @@ function TreeView:each_item()
 end
 
 
-function TreeView:set_selection(selection, selection_y)
+function TreeView:set_selection(selection, selection_y, center, instant)
   self.selected_item = selection
   if selection and selection_y
       and (selection_y <= 0 or selection_y >= self.size.y) then
-
     local lh = self:get_item_height()
-    if selection_y >= self.size.y - lh then
+    if not center and selection_y >= self.size.y - lh then
       selection_y = selection_y - self.size.y + lh
     end
+    if center then
+      selection_y = selection_y - (self.size.y - lh) / 2
+    end
     local _, y = self:get_content_offset()
-    self.scroll.to.y = selection and (selection_y - y)
+    self.scroll.to.y = selection_y - y
+    self.scroll.to.y = common.clamp(self.scroll.to.y, 0, self:get_scrollable_size() - self.size.y)
+    if instant then
+      self.scroll.y = self.scroll.to.y
+    end
   end
+end
+
+---Sets the selection to the file with the specified path.
+---
+---@param path string #Absolute path of item to select
+---@param expand boolean #Expand dirs leading to the item
+---@param scroll_to boolean #Scroll to make the item visible
+---@param instant boolean #Don't animate the scroll
+---@return table? #The selected item
+function TreeView:set_selection_to_path(path, expand, scroll_to, instant)
+  local to_select, to_select_y
+  local let_it_finish, done
+  ::restart::
+  for item, x,y,w,h in self:each_item() do
+    if not done then
+      if item.type == "dir" then
+        local _, to = string.find(path, item.abs_filename..PATHSEP, 1, true)
+        if to and to == #item.abs_filename + #PATHSEP then
+          to_select, to_select_y = item, y
+          if expand and not item.expanded then
+            -- Use TreeView:toggle_expand to update the directory structure.
+            -- Directly using item.expanded doesn't update the cached tree.
+            self:toggle_expand(true, item)
+            -- Because we altered the size of the TreeView
+            -- and because TreeView:get_scrollable_size uses self.count_lines
+            -- which gets updated only when TreeView:each_item finishes,
+            -- we can't stop here or we risk that the scroll
+            -- gets clamped by View:clamp_scroll_position.
+            let_it_finish = true
+            -- We need to restart the process because if TreeView:toggle_expand
+            -- altered the cache, TreeView:each_item risks looping indefinitely.
+            goto restart
+          end
+        end
+      else
+        if item.abs_filename == path then
+          to_select, to_select_y = item, y
+          done = true
+          if not let_it_finish then break end
+        end
+      end
+    end
+  end
+  if to_select then
+    self:set_selection(to_select, scroll_to and to_select_y, true, instant)
+  end
+  return to_select
 end
 
 
@@ -207,12 +251,11 @@ function TreeView:get_text_bounding_box(item, x, y, w, h)
 end
 
 
+
 function TreeView:on_mouse_moved(px, py, ...)
   if not self.visible then return end
-  TreeView.super.on_mouse_moved(self, px, py, ...)
-  self.cursor_pos.x = px
-  self.cursor_pos.y = py
-  if self.dragging_scrollbar then
+  if TreeView.super.on_mouse_moved(self, px, py, ...) then
+    -- mouse movement handled by the View (scrollbar)
     self.hovered_item = nil
     return
   end
@@ -237,6 +280,12 @@ function TreeView:on_mouse_moved(px, py, ...)
 end
 
 
+function TreeView:on_mouse_left()
+  TreeView.super.on_mouse_left(self)
+  self.hovered_item = nil
+end
+
+
 function TreeView:update()
   -- update width
   local dest = self.visible and self.target_size or 0
@@ -247,7 +296,7 @@ function TreeView:update()
     self:move_towards(self.size, "x", dest, nil, "treeview")
   end
 
-  if not self.visible then return end
+  if self.size.x == 0 or self.size.y == 0 or not self.visible then return end
 
   local duration = system.get_time() - self.tooltip.begin
   if self.hovered_item and self.tooltip.x and duration > tooltip_delay then
@@ -260,10 +309,30 @@ function TreeView:update()
   self.item_text_spacing = style.icon_font:get_width("f") / 2
 
   -- this will make sure hovered_item is updated
-  -- we don't want events when the thing is scrolling fast
-  local dy = math.abs(self.scroll.to.y - self.scroll.y)
-  if self.scroll.to.y ~= 0 and dy < self:get_item_height() then
-    self:on_mouse_moved(self.cursor_pos.x, self.cursor_pos.y, 0, 0)
+  local dy = math.abs(self.last_scroll_y - self.scroll.y)
+  if dy > 0 then
+    self:on_mouse_moved(core.root_view.mouse.x, core.root_view.mouse.y, 0, 0)
+    self.last_scroll_y = self.scroll.y
+  end
+
+  local config = config.plugins.treeview
+  if config.highlight_focused_file then
+    -- Try to only highlight when we actually change tabs
+    local current_node = core.root_view:get_active_node()
+    local current_active_view = core.active_view
+    if current_node and not current_node.locked
+     and current_active_view ~= self and current_active_view ~= self.last_active_view then
+      self.selected_item = nil
+      self.last_active_view = current_active_view
+      if DocView:is_extended_by(current_active_view) then
+        local abs_filename = current_active_view.doc
+                             and current_active_view.doc.abs_filename or ""
+        self:set_selection_to_path(abs_filename,
+                                   config.expand_dirs_to_focused_file,
+                                   config.scroll_to_focused_file,
+                                   not config.animate_scroll_to_focused_file)
+      end
+    end
   end
 
   TreeView.super.update(self)
@@ -436,8 +505,8 @@ function TreeView:get_previous(item)
 end
 
 
-function TreeView:toggle_expand(toggle)
-  local item = self.selected_item
+function TreeView:toggle_expand(toggle, item)
+  item = item or self.selected_item
 
   if not item then return end
 
@@ -455,6 +524,11 @@ function TreeView:toggle_expand(toggle)
 end
 
 
+function TreeView:open_doc(filename)
+  core.root_view:open_doc(core.open_doc(filename))
+end
+
+
 -- init
 local view = TreeView()
 local node = core.root_view:get_active_node()
@@ -467,7 +541,7 @@ view.node = node:split("left", view, {x = true}, true)
 -- plugin module that plug itself in the active node but it is plugged here
 -- in the treeview node.
 local toolbar_view = nil
-local toolbar_plugin, ToolbarView = core.try(require, "plugins.toolbarview")
+local toolbar_plugin, ToolbarView = pcall(require, "plugins.toolbarview")
 if config.plugins.toolbarview ~= false and toolbar_plugin then
   toolbar_view = ToolbarView()
   view.node:split("down", toolbar_view, {y = true})
@@ -532,15 +606,19 @@ local function is_primary_project_folder(path)
   return core.project_dir == path
 end
 
-menu:register(function() return view.hovered_item end, {
+
+local function treeitem() return view.hovered_item or view.selected_item end
+
+
+menu:register(function() return core.active_view:is(TreeView) and treeitem() end, {
   { text = "Open in System", command = "treeview:open-in-system" },
   ContextMenu.DIVIDER
 })
 
 menu:register(
   function()
-    return view.hovered_item
-      and not is_project_folder(view.hovered_item.abs_filename)
+    local item = treeitem()
+    return core.active_view:is(TreeView) and item and not is_project_folder(item.abs_filename)
   end,
   {
     { text = "Rename", command = "treeview:rename" },
@@ -550,7 +628,8 @@ menu:register(
 
 menu:register(
   function()
-    return view.hovered_item and view.hovered_item.type == "dir"
+    local item = treeitem()
+    return core.active_view:is(TreeView) and item and item.type == "dir"
   end,
   {
     { text = "New File", command = "treeview:new-file" },
@@ -560,9 +639,10 @@ menu:register(
 
 menu:register(
   function()
-    return view.hovered_item
-      and not is_primary_project_folder(view.hovered_item.abs_filename)
-      and is_project_folder(view.hovered_item.abs_filename)
+    local item = treeitem()
+    return core.active_view:is(TreeView) and item
+      and not is_primary_project_folder(item.abs_filename)
+      and is_project_folder(item.abs_filename)
   end,
   {
     { text = "Remove directory", command = "treeview:remove-project-directory" },
@@ -603,7 +683,10 @@ command.add(nil, {
   end
 })
 
-command.add(TreeView, {
+command.add(
+  function()
+    return not menu.show_context_menu and core.active_view:extends(TreeView), TreeView
+  end, {
   ["treeview:next"] = function()
     local item, _, item_y = view:get_next(view.selected_item)
     view:set_selection(item, item_y)
@@ -624,8 +707,7 @@ command.add(TreeView, {
         if core.last_active_view and core.active_view == view then
           core.set_active_view(core.last_active_view)
         end
-        local doc_filename = core.normalize_to_project_dir(item.abs_filename)
-        core.root_view:open_doc(core.open_doc(doc_filename))
+        view:open_doc(core.normalize_to_project_dir(item.abs_filename))
       end)
     end
   end,
@@ -671,24 +753,35 @@ command.add(TreeView, {
       view:toggle_expand(true)
     end
   end,
+
+  ["treeview-context:show"] = function()
+    if view.hovered_item then
+      menu:show(core.root_view.mouse.x, core.root_view.mouse.y)
+      return
+    end
+
+    local item = view.selected_item
+    if not item then return end
+
+    local x, y
+    for _i, _x, _y, _w, _h in view:each_item() do
+      if _i == item then
+        x = _x + _w / 2
+        y = _y + _h / 2
+        break
+      end
+    end
+    menu:show(x, y)
+  end
 })
-
-
-local function treeitem() return view.hovered_item or view.selected_item end
 
 
 command.add(
   function()
-    return treeitem() ~= nil
-      and (
-        core.active_view == view or core.active_view == menu
-        or (view.toolbar and core.active_view == view.toolbar)
-        -- sometimes the context menu is shown on top of statusbar
-        or core.active_view == core.status_view
-      )
-  end, {
-  ["treeview:delete"] = function()
     local item = treeitem()
+    return item ~= nil and (core.active_view == view or menu.show_context_menu), item
+  end, {
+  ["treeview:delete"] = function(item)
     local filename = item.abs_filename
     local relfilename = item.filename
     if item.dir_name ~= core.project_dir then
@@ -699,8 +792,8 @@ command.add(
     local file_type = file_info.type == "dir" and "Directory" or "File"
     -- Ask before deleting
     local opt = {
-      { font = style.font, text = "Yes", default_yes = true },
-      { font = style.font, text = "No" , default_no = true }
+      { text = "Yes", default_yes = true },
+      { text = "No", default_no = true }
     }
     core.nag_view:show(
       string.format("Delete %s", file_type),
@@ -728,13 +821,9 @@ command.add(
         end
       end
     )
-  end
-})
+  end,
 
-
-command.add(function() return treeitem() ~= nil end, {
-  ["treeview:rename"] = function()
-    local item = treeitem()
+  ["treeview:rename"] = function(item)
     local old_filename = item.filename
     local old_abs_filename = item.abs_filename
     core.command_view:enter("Rename", {
@@ -764,9 +853,8 @@ command.add(function() return treeitem() ~= nil end, {
     })
   end,
 
-  ["treeview:new-file"] = function()
+  ["treeview:new-file"] = function(item)
     local text
-    local item = treeitem()
     if not is_project_folder(item.abs_filename) then
       text = item.filename .. PATHSEP
     end
@@ -778,7 +866,7 @@ command.add(function() return treeitem() ~= nil end, {
         local file = io.open(doc_filename, "a+")
         file:write("")
         file:close()
-        core.root_view:open_doc(core.open_doc(doc_filename))
+        view:open_doc(doc_filename)
         core.log("Created %s", doc_filename)
       end,
       suggest = function(text)
@@ -787,9 +875,8 @@ command.add(function() return treeitem() ~= nil end, {
     })
   end,
 
-  ["treeview:new-folder"] = function()
+  ["treeview:new-folder"] = function(item)
     local text
-    local item = treeitem()
     if not is_project_folder(item.abs_filename) then
       text = item.filename .. PATHSEP
     end
@@ -806,27 +893,61 @@ command.add(function() return treeitem() ~= nil end, {
     })
   end,
 
-  ["treeview:open-in-system"] = function()
-    local hovered_item = treeitem()
-
+  ["treeview:open-in-system"] = function(item)
     if PLATFORM == "Windows" then
-      system.exec(string.format("start \"\" %q", hovered_item.abs_filename))
+      system.exec(string.format("start \"\" %q", item.abs_filename))
     elseif string.find(PLATFORM, "Mac") then
-      system.exec(string.format("open %q", hovered_item.abs_filename))
+      system.exec(string.format("open %q", item.abs_filename))
     elseif PLATFORM == "Linux" or string.find(PLATFORM, "BSD") then
-      system.exec(string.format("xdg-open %q", hovered_item.abs_filename))
+      system.exec(string.format("xdg-open %q", item.abs_filename))
     end
   end
 })
+
+local projectsearch = pcall(require, "plugins.projectsearch")
+if projectsearch then
+  menu:register(function()
+    local item = treeitem()
+    return item and item.type == "dir"
+  end, {
+    { text = "Find in directory", command = "treeview:search-in-directory" }
+  })
+  command.add(function()
+    return view.hovered_item and view.hovered_item.type == "dir"
+  end, {
+    ["treeview:search-in-directory"] = function(item)
+      command.perform("project-search:find", view.hovered_item.abs_filename)
+    end
+  })
+end
 
 command.add(function()
     local item = treeitem()
     return item
            and not is_primary_project_folder(item.abs_filename)
-           and is_project_folder(item.abs_filename)
+           and is_project_folder(item.abs_filename), item
   end, {
-  ["treeview:remove-project-directory"] = function()
-    core.remove_project_directory(treeitem().dir_name)
+  ["treeview:remove-project-directory"] = function(item)
+    core.remove_project_directory(item.dir_name)
+  end,
+})
+
+
+command.add(
+  function()
+    return menu.show_context_menu == true and core.active_view:is(TreeView)
+  end, {
+  ["treeview-context:focus-previous"] = function()
+    menu:focus_previous()
+  end,
+  ["treeview-context:focus-next"] = function()
+    menu:focus_next()
+  end,
+  ["treeview-context:hide"] = function()
+    menu:hide()
+  end,
+  ["treeview-context:on-selected"] = function()
+    menu:call_selected_item()
   end,
 })
 
@@ -845,6 +966,15 @@ keymap.add {
   ["mclick"]      = "treeview:select",
   ["ctrl+lclick"] = "treeview:new-folder"
 }
+
+keymap.add {
+  ["menu"]   = "treeview-context:show",
+  ["return"] = "treeview-context:on-selected",
+  ["up"]     = "treeview-context:focus-previous",
+  ["down"]   = "treeview-context:focus-next",
+  ["escape"] = "treeview-context:hide"
+}
+
 
 -- The config specification used by gui generators
 config.plugins.treeview.config_spec = {

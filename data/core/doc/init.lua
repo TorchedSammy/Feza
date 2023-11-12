@@ -33,6 +33,7 @@ end
 function Doc:reset()
   self.lines = { "\n" }
   self.selections = { 1, 1, 1, 1 }
+  self.last_selection = 1
   self.undo_stack = { idx = 1 }
   self.redo_stack = { idx = 1 }
   self.clean_change_id = 1
@@ -43,7 +44,12 @@ end
 
 function Doc:reset_syntax()
   local header = self:get_text(1, 1, self:position_offset(1, 1, 128))
-  local syn = syntax.get(self.filename or "", header)
+  local path = self.abs_filename
+  if not path and self.filename then
+    path = core.project_dir .. PATHSEP .. self.filename
+  end
+  if path then path = common.normalize_path(path) end
+  local syn = syntax.get(path, header)
   if self.syntax ~= syn then
     self.syntax = syn
     self.highlighter:soft_reset()
@@ -141,13 +147,37 @@ function Doc:get_change_id()
   return self.undo_stack.idx
 end
 
+local function sort_positions(line1, col1, line2, col2)
+  if line1 > line2 or line1 == line2 and col1 > col2 then
+    return line2, col2, line1, col1, true
+  end
+  return line1, col1, line2, col2, false
+end
+
 -- Cursor section. Cursor indices are *only* valid during a get_selections() call.
 -- Cursors will always be iterated in order from top to bottom. Through normal operation
 -- curors can never swap positions; only merge or split, or change their position in cursor
 -- order.
 function Doc:get_selection(sort)
-  local idx, line1, col1, line2, col2, swap = self:get_selections(sort)({ self.selections, sort }, 0)
+  local line1, col1, line2, col2, swap = self:get_selection_idx(self.last_selection, sort)
+  if not line1 then
+    line1, col1, line2, col2, swap = self:get_selection_idx(1, sort)
+  end
   return line1, col1, line2, col2, swap
+end
+
+
+---Get the selection specified by `idx`
+---@param idx integer @the index of the selection to retrieve
+---@param sort? boolean @whether to sort the selection returned
+---@return integer,integer,integer,integer,boolean? @line1, col1, line2, col2, was the selection sorted
+function Doc:get_selection_idx(idx, sort)
+  local line1, col1, line2, col2 = self.selections[idx*4-3], self.selections[idx*4-2], self.selections[idx*4-1], self.selections[idx*4]
+  if line1 and sort then
+    return sort_positions(line1, col1, line2, col2)
+  else
+    return line1, col1, line2, col2
+  end
 end
 
 function Doc:get_selection_text(limit)
@@ -181,13 +211,6 @@ function Doc:sanitize_selection()
   end
 end
 
-local function sort_positions(line1, col1, line2, col2)
-  if line1 > line2 or line1 == line2 and col1 > col2 then
-    return line2, col2, line1, col1, true
-  end
-  return line1, col1, line2, col2, false
-end
-
 function Doc:set_selections(idx, line1, col1, line2, col2, swap, rm)
   assert(not line2 == not col2, "expected 3 or 5 arguments")
   if swap then line1, col1, line2, col2 = line2, col2, line1, col1 end
@@ -206,10 +229,14 @@ function Doc:add_selection(line1, col1, line2, col2, swap)
     end
   end
   self:set_selections(target, line1, col1, line2, col2, swap, 0)
+  self.last_selection = target
 end
 
 
 function Doc:remove_selection(idx)
+  if self.last_selection >= idx then
+    self.last_selection = self.last_selection - 1
+  end
   common.splice(self.selections, (idx - 1) * 4 + 1, 4)
 end
 
@@ -217,6 +244,7 @@ end
 function Doc:set_selection(line1, col1, line2, col2, swap)
   self.selections = {}
   self:set_selections(1, line1, col1, line2, col2, swap)
+  self.last_selection = 1
 end
 
 function Doc:merge_cursors(idx)
@@ -225,6 +253,9 @@ function Doc:merge_cursors(idx)
       if self.selections[i] == self.selections[j] and
         self.selections[i+1] == self.selections[j+1] then
           common.splice(self.selections, i, 4)
+          if self.last_selection >= (i+3)/4 then
+            self.last_selection = self.last_selection - 1
+          end
           break
       end
     end
@@ -250,9 +281,13 @@ end
 -- End of cursor seciton.
 
 function Doc:sanitize_position(line, col)
-  line = common.clamp(line, 1, #self.lines)
-  col = common.clamp(col, 1, #self.lines[line])
-  return line, col
+  local nlines = #self.lines
+  if line > nlines then
+    return nlines, #self.lines[nlines]
+  elseif line < 1 then
+    return 1, 1
+  end
+  return line, common.clamp(col, 1, #self.lines[line])
 end
 
 
@@ -401,19 +436,51 @@ function Doc:raw_remove(line1, col1, line2, col2, undo_stack, time)
   local before = self.lines[line1]:sub(1, col1 - 1)
   local after = self.lines[line2]:sub(col2)
 
-  -- splice line into line array
-  common.splice(self.lines, line1, line2 - line1 + 1, { before .. after })
+  local line_removal = line2 - line1
+  local col_removal = col2 - col1
 
-  -- move all cursors back if they share a line with the removed text
+  -- splice line into line array
+  common.splice(self.lines, line1, line_removal + 1, { before .. after })
+
+  local merge = false
+
+  -- keep selections in correct positions: each pair (line, col)
+  -- * remains unchanged if before the deleted text
+  -- * is set to (line1, col1) if in the deleted text
+  -- * is set to (line1, col - col_removal) if on line2 but out of the deleted text
+  -- * is set to (line - line_removal, col) if after line2
   for idx, cline1, ccol1, cline2, ccol2 in self:get_selections(true, true) do
-    if cline1 < line2 then break end
-    local line_removal = line2 - line1
-    local column_removal = line2 == cline2 and col2 < ccol1 and (line2 == line1 and col2 - col1 or col2) or 0
-    self:set_selections(idx, cline1 - line_removal, ccol1 - column_removal, cline2 - line_removal, ccol2 - column_removal)
+    if cline2 < line1 then break end
+    local l1, c1, l2, c2 = cline1, ccol1, cline2, ccol2
+
+    if cline1 > line1 or (cline1 == line1 and ccol1 > col1) then
+      if cline1 > line2 then
+        l1 = l1 - line_removal
+      else
+        l1 = line1
+        c1 = (cline1 == line2 and ccol1 > col2) and c1 - col_removal or col1
+      end
+    end
+
+    if cline2 > line1 or (cline2 == line1 and ccol2 > col1) then
+      if cline2 > line2 then
+        l2 = l2 - line_removal
+      else
+        l2 = line1
+        c2 = (cline2 == line2 and ccol2 > col2) and c2 - col_removal or col1
+      end
+    end
+
+    if l1 == line1 and c1 == col1 then merge = true end
+    self:set_selections(idx, l1, c1, l2, c2)
+  end
+
+  if merge then
+    self:merge_cursors()
   end
 
   -- update highlighter and assure selection is in bounds
-  self.highlighter:remove_notify(line1, line2 - line1)
+  self.highlighter:remove_notify(line1, line_removal)
   self:sanitize_selection()
 end
 
@@ -455,6 +522,18 @@ function Doc:text_input(text, idx)
     self:move_to_cursor(sidx, #text)
   end
 end
+
+
+function Doc:ime_text_editing(text, start, length, idx)
+  for sidx, line1, col1, line2, col2 in self:get_selections(true, idx or true) do
+    if line1 ~= line2 or col1 ~= col2 then
+      self:delete_to_cursor(sidx)
+    end
+    self:insert(line1, col1, text)
+    self:set_selections(sidx, line1, col1 + #text, line1, col1)
+  end
+end
+
 
 function Doc:replace_cursor(idx, line1, col1, line2, col2, fn)
   local old_text = self:get_text(line1, col1, line2, col2)

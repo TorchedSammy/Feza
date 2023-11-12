@@ -22,7 +22,8 @@ var regexLoader = packagelib.Loader{
 
 func regexLoad(rtm *rt.Runtime) (rt.Value, func()) {
 	regexMethods := rt.NewTable()
-	r.SetEnvGoFunc(regexMethods, "cmatch", regexMatch, 2, false)
+	r.SetEnvGoFunc(regexMethods, "cmatch", regexCMatch, 2, false)
+	r.SetEnvGoFunc(regexMethods, "match", regexMatch, 2, false)
 
 	regexMeta := rt.NewTable()
 	r.SetEnv(regexMeta, "__index", rt.TableValue(regexMethods))
@@ -99,6 +100,10 @@ func regexCompile(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 }
 
 func regexMatch(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	return c.Next(), nil
+}
+
+func regexCMatch(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	re, err := regexArg(c, 0)
 	if err != nil {
 		return nil, err

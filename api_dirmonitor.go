@@ -25,6 +25,7 @@ func dirmonitorLoad(rtm *rt.Runtime) (rt.Value, func()) {
 	r.SetEnvGoFunc(dirmonitorMethods, "watch", dirmonitorWatch, 2, false)
 	r.SetEnvGoFunc(dirmonitorMethods, "unwatch", dirmonitorWatch, 2, false)
 	r.SetEnvGoFunc(dirmonitorMethods, "check", dirmonitorWatch, 2, false)
+	r.SetEnvGoFunc(dirmonitorMethods, "mode", dirmonitorMode, 1, false)
 
 	dirmonitorMeta := rt.NewTable()
 	r.SetEnv(dirmonitorMeta, "__index", rt.TableValue(dirmonitorMethods))
@@ -134,4 +135,8 @@ func dirmonitorCheck(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	w.callback = fun
 
 	return c.Next(), nil
+}
+
+func dirmonitorMode(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
+	return c.PushingNext1(t.Runtime, rt.BoolValue(true)), nil
 }

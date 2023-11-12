@@ -84,7 +84,16 @@ function CommandView:get_line_screen_position(line, col)
 end
 
 
+function CommandView:supports_text_input()
+  return true
+end
+
+
 function CommandView:get_scrollable_size()
+  return 0
+end
+
+function CommandView:get_h_scrollable_size()
   return 0
 end
 
@@ -155,7 +164,7 @@ end
 function CommandView:submit()
   local suggestion = self.suggestions[self.suggestion_idx]
   local text = self:get_text()
-  if self.state.validate(text) then
+  if self.state.validate(text, suggestion) then
     local submit = self.state.submit
     self:exit(true)
     submit(text, suggestion)

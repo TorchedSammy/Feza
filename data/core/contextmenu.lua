@@ -9,6 +9,7 @@ local View = require "core.view"
 
 local border_width = 1
 local divider_width = 1
+local divider_padding = 5
 local DIVIDER = {}
 
 ---@class core.contextmenu : core.object
@@ -22,13 +23,14 @@ function ContextMenu:new()
   self.selected = -1
   self.height = 0
   self.position = { x = 0, y = 0 }
+  self.current_scale = SCALE
 end
 
 local function get_item_size(item)
   local lw, lh
   if item == DIVIDER then
     lw = 0
-    lh = divider_width
+    lh = divider_width + divider_padding * SCALE * 2
   else
     lw = style.font:get_width(item.text)
     if item.info then
@@ -39,11 +41,10 @@ local function get_item_size(item)
   return lw, lh
 end
 
-function ContextMenu:register(predicate, items)
-  predicate = command.generate_predicate(predicate)
-  local width, height = 0, 0 --precalculate the size of context menu
-  for i, item in ipairs(items) do
-    if item ~= DIVIDER then
+local function update_items_size(items, update_binding)
+  local width, height = 0, 0
+  for _, item in ipairs(items) do
+    if update_binding and item ~= DIVIDER then
       item.info = keymap.get_binding(item.command)
     end
     local lw, lh = get_item_size(item)
@@ -52,6 +53,11 @@ function ContextMenu:register(predicate, items)
   end
   width = width + style.padding.x * 2
   items.width, items.height = width, height
+end
+
+function ContextMenu:register(predicate, items)
+  predicate = command.generate_predicate(predicate)
+  update_items_size(items, true)
   table.insert(self.itemset, { predicate = predicate, items = items })
 end
 
@@ -77,12 +83,8 @@ function ContextMenu:show(x, y)
     local w, h = self.items.width, self.items.height
 
     -- by default the box is opened on the right and below
-    if x + w >= core.root_view.size.x then
-      x = x - w
-    end
-    if y + h >= core.root_view.size.y then
-      y = y - h
-    end
+    x = common.clamp(x, 0, core.root_view.size.x - w - style.padding.x)
+    y = common.clamp(y, 0, core.root_view.size.y - h)
 
     self.position.x, self.position.y = x, y
     self.show_context_menu = true
@@ -194,6 +196,13 @@ end
 
 function ContextMenu:draw()
   if not self.show_context_menu then return end
+  if self.current_scale ~= SCALE then
+    update_items_size(self.items)
+    for _, set in ipairs(self.itemset) do
+      update_items_size(set.items)
+    end
+    self.current_scale = SCALE
+  end
   core.root_view:defer_draw(self.draw_context_menu, self)
 end
 
@@ -212,7 +221,7 @@ function ContextMenu:draw_context_menu()
 
   for i, item, x, y, w, h in self:each_item() do
     if item == DIVIDER then
-      renderer.draw_rect(x, y, w, h, style.caret)
+      renderer.draw_rect(x, y + divider_padding * SCALE, w, divider_width, style.divider)
     else
       if i == self.selected then
         renderer.draw_rect(x, y, w, h, style.selection)

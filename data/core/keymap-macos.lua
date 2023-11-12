@@ -6,7 +6,7 @@ local function keymap_macos(keymap)
     ["cmd+n"] = "core:new-doc",
     ["cmd+shift+c"] = "core:change-project-folder",
     ["cmd+shift+o"] = "core:open-project-folder",
-    ["cmd+shift+r"] = "core:restart",
+    ["cmd+option+r"] = "core:restart",
     ["cmd+ctrl+return"] = "core:toggle-fullscreen",
 
     ["cmd+ctrl+shift+j"] = "root:split-left",
@@ -34,7 +34,11 @@ local function keymap_macos(keymap)
     ["cmd+8"] = "root:switch-to-tab-8",
     ["cmd+9"] = "root:switch-to-tab-9",
     ["wheel"] = "root:scroll",
-    
+    ["hwheel"] = "root:horizontal-scroll",
+    ["shift+hwheel"] = "root:horizontal-scroll",
+    ["wheelup"] = "root:scroll-hovered-tabs-backward",
+    ["wheeldown"] = "root:scroll-hovered-tabs-forward",
+
     ["cmd+f"] = "find-replace:find",
     ["cmd+r"] = "find-replace:replace",
     ["f3"] = "find-replace:repeat-find",
