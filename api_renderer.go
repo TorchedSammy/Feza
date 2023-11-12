@@ -146,8 +146,11 @@ func rendererDrawText(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	cv.SetFont(fnt.f, float64(fnt.size))
 	cv.SetFillStyle(r, g, b, a)
 	cv.FillText(text, x, y)
+	metrics := cv.MeasureText(text)
 
-	return c.Next(), nil
+	tx := x + metrics.Width // not sure how this will work
+
+	return c.PushingNext1(t.Runtime, rt.IntValue(int64(tx))), nil
 }
 
 var fontMetaKey = rt.StringValue("_fezaFont")

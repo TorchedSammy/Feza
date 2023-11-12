@@ -18,7 +18,6 @@ type luaExport struct {
 
 func numOrIntArg(c *rt.GoCont, n int) (float64, error) {
 	val := c.Arg(n)
-	fmt.Println(val.TypeName())
 	valInt, ok := val.TryInt()
 	if ok {
 		return float64(valInt), nil
