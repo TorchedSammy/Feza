@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	rt "github.com/arnodel/golua/runtime"
@@ -132,6 +133,13 @@ poll:
 		case *sdl.MouseWheelEvent:
 			n.Push(t.Runtime, stv("mousewheel"))
 			n.Push(t.Runtime, itv(int64(e.Y)))
+		case *sdl.KeyboardEvent:
+			if e.State == sdl.PRESSED {
+				n.Push(t.Runtime, stv("keypressed"))
+			} else {
+				n.Push(t.Runtime, stv("keyreleased"))
+			}
+			n.Push(t.Runtime, stv(strings.ToLower(sdl.GetScancodeName(e.Keysym.Scancode))))
 		default:
 			goto poll
 	}
