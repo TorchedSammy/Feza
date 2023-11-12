@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+		"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,10 +81,15 @@ func stv(str string) rt.Value {
 var i = 0
 func systemPollEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	n := c.Next()
-	fmt.Println("poll called. waiting")
+	//fmt.Println("poll called. waiting")
 poll:
 	event := sdl.PollEvent()
-	fmt.Println("past poll call", i)
+	if event == nil {
+		return n, nil
+	}
+
+	fmt.Println(event)
+	//fmt.Println("past poll call", i)
 	i++
 
 	switch e := event.(type) {
@@ -154,7 +159,7 @@ func systemWaitEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 
 	var timeout float64
 	if err := c.Check1Arg(); err == nil {
-		fmt.Println("not indefinite wait")
+		//fmt.Println("not indefinite wait")
 		wait = sdl.WaitEventTimeout
 		timeout, err = c.FloatArg(0)
 		if err != nil {

@@ -347,7 +347,6 @@ end
 ---@return number x_advance
 ---@return number y_advance
 function common.draw_text(font, color, text, align, x,y,w,h)
-  print(text, x, y, w, h)
   text = tostring(text)
   x = x or 0
   y = y or 0
