@@ -1,4 +1,4 @@
-# Lavatera
+# Feza
 
 Lite XL core reimplementation in Go.
 

@@ -65,7 +65,7 @@ func setupAPI() {
 		case "windows": platform = "Windows"
 		case "darwin": platform = "Mac OS X"
 		case "linux": platform = "Linux"
-		// TODO: ios and android (will lavatera even build on those platforms..?)
+		// TODO: ios and android (will feza even build on those platforms..?)
 	}
 	exe, _ := os.Executable()
 	curuser, _ := user.Current()

@@ -151,7 +151,7 @@ func rendererDrawText(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	return c.Next(), nil
 }
 
-var fontMetaKey = rt.StringValue("_lavateraFont")
+var fontMetaKey = rt.StringValue("_fezaFont")
 type font struct{
 	f *canvas.Font
 	size int

@@ -1,4 +1,4 @@
-module lavatera
+module feza
 
 go 1.17
 

@@ -14,7 +14,7 @@ type dirmonitor struct{
 	callback *rt.Closure
 }
 
-var dirmonitorMetaKey = rt.StringValue("_lavateraDirmonitor")
+var dirmonitorMetaKey = rt.StringValue("_fezaDirmonitor")
 var dirmonitorLoader = packagelib.Loader{
 	Name: "dirmonitor",
 	Load: dirmonitorLoad,

@@ -14,7 +14,7 @@ const (
 	REGEX_ENDANCHORED
 )
 
-var regexMetaKey = rt.StringValue("_lavateraRegexp")
+var regexMetaKey = rt.StringValue("_fezaRegexp")
 var regexLoader = packagelib.Loader{
 	Name: "regex",
 	Load: regexLoad,
