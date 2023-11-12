@@ -116,7 +116,7 @@ func rendererDrawText(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 		return nil, err
 	}
 
-	_, err := fontArg(c, 0)
+	fnt, err := fontArg(c, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -143,8 +143,7 @@ func rendererDrawText(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	b := int(color.Get(rt.IntValue(3)).AsInt())
 	a := int(color.Get(rt.IntValue(4)).AsInt())
 
-	f, _ := cv.LoadFont("/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf")
-	cv.SetFont(f, 36)
+	cv.SetFont(fnt.f, float64(fnt.size))
 	cv.SetFillStyle(r, g, b, a)
 	cv.FillText(text, x, y)
 
