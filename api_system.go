@@ -389,7 +389,7 @@ func systemGetTime(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 }
 
 func systemSleep(r *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
-	secs, err := c.IntArg(0)
+	secs, err := numOrIntArg(c, 0)
 	if err != nil {
 		return nil, err
 	}
