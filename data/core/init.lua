@@ -1341,7 +1341,7 @@ function core.step()
   -- handle events
   local did_keymap = false
 
-  for type, a,b,c,d in system.poll_event do
+  local type, a,b,c,d = system.poll_event()
     print(type, a, b, c, d)
     if type == "textinput" and did_keymap then
       did_keymap = false
@@ -1357,7 +1357,6 @@ function core.step()
       did_keymap = res or did_keymap
     end
     core.redraw = true
-  end
 
   local width, height = renderer.get_size()
 

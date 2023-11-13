@@ -84,11 +84,11 @@ func systemPollEvent(t *rt.Thread, c *rt.GoCont) (rt.Cont, error) {
 	//fmt.Println("poll called. waiting")
 poll:
 	event := sdl.PollEvent()
+	fmt.Println(event)
 	if event == nil {
-		return n, nil
+		goto poll
 	}
 
-	fmt.Println(event)
 	//fmt.Println("past poll call", i)
 	i++
 
